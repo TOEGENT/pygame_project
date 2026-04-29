@@ -78,10 +78,13 @@ class GameState:
         other.velocity[0] -= impulse[0] / other.mass
         other.velocity[1] -= impulse[1] / other.mass
 
-    def check_collision(self,other):
-        dx = self.player.pos[0] - other.pos[0]
-        dy = self.player.pos[1] - other.pos[1]
-        distance = math.sqrt(dx**2 + dy**2)
+    def check_collisions(self):
+        for i in range(len(self.entities)):
+            for j in range(i+1, len(self.entities)):
+                other = self.entities[j]
+                dx = self.entities[i].pos[0] - other.pos[0]
+                dy = self.entities[i].pos[1] - other.pos[1]
+                distance = math.sqrt(dx**2 + dy**2)
 
         if distance < self.player.radius + other.radius:
             self.resolve_collision(other)
@@ -123,8 +126,7 @@ while running:
         if event.type == pygame.QUIT:
             running = False
     
-    for entity in game_state.entities:
-        entity.update()
+    game_state.update()
     
     for i in range(len(game_state.entities)):
         for j in range(i+1,len(game_state.entities)):
