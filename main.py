@@ -23,77 +23,114 @@ class Colors:
     WHITE = (255, 255, 255)
 
 class Ball:
-    def __init__(self,color,pos,radius):
+    def __init__(self,color,pos,radius,mass):
         self.color = color
         self.pos = pos
         self.radius = radius
-        self.dx=0
-        self.dy=0
+        self.mass = mass
+        self.velocity = [0,0]
 
-red_ball = Ball(Colors.RED,[100,300],30)
-blue_ball = Ball(Colors.BLUE,[700,300],30)
-
+red_ball = Ball(Colors.RED,[100,300],30,1)
+blue_ball = Ball(Colors.BLUE,[700,300],30,1)
 
 
 
 
 class GameState:
-    def __init__(self,player: Ball,*entites: List[Ball]):
-        self.state = State.NO_COLLISION
-        self.entities = list(entites)
-        self.player = player
+    def __init__(self,*entites: List[Ball]):
+
+        self.entities = entites[0]
+        
     
 
-    def check_collision(self):
-        for i in range(len(self.entities)):
-            for j in range(i+1,len(self.entities)):
-                e1 = self.entities[i]
-                e2 = self.entities[j]
-                distance = math.sqrt((e1.pos[0]-e2.pos[0])**2 + (e1.pos[1]-e2.pos[1])**2)
-                if distance < e1.radius + e2.radius:
-                    return State.COLLISION
-        return State.NO_COLLISION
+
+    def resolve_collision(self,other):
+        # Вычисляем нормальный вектор
+        normal = [other.pos[0] - self.player.pos[0], other.pos[1] - self.player.pos[1]]
+        distance = math.sqrt(normal[0]**2 + normal[1]**2)
+        if distance == 0:
+            return  # Избегаем деления на ноль
+        normal[0] /= distance
+        normal[1] /= distance
+
+        # Вычисляем относительную скорость
+        relative_velocity = [self.player.velocity[0] - other.velocity[0],
+                             self.player.velocity[1] - other.velocity[1]]
+
+        # Вычисляем скорость по нормали
+        velocity_along_normal = relative_velocity[0] * normal[0] + relative_velocity[1] * normal[1]
+
+        if velocity_along_normal > 0:
+            return  # Шары уже разлетаются
+
+        # Вычисляем коэффициент упругости (для идеального столкновения он равен 1)
+        restitution = 1
+
+        # Вычисляем импульс
+        impulse_scalar = -(1 + restitution) * velocity_along_normal
+        impulse_scalar /= (1 / self.player.mass + 1 / other.mass)
+
+        impulse = [impulse_scalar * normal[0], impulse_scalar * normal[1]]
+
+        # Применяем импульс к шарам
+        self.player.velocity[0] += impulse[0] / self.player.mass
+        self.player.velocity[1] += impulse[1] / self.player.mass
+        other.velocity[0] -= impulse[0] / other.mass
+        other.velocity[1] -= impulse[1] / other.mass
+
+    def check_collision(self,other):
+        dx = self.player.pos[0] - other.pos[0]
+        dy = self.player.pos[1] - other.pos[1]
+        distance = math.sqrt(dx**2 + dy**2)
+
+        if distance < self.player.radius + other.radius:
+            self.resolve_collision(other)
+
 
     def check_input(self):
         keys = pygame.key.get_pressed()
-
+        player = self.entities[0]
         # Управление красным шаром
         if keys[pygame.K_LEFT]:
-            self.player.dx -= SPEED
+            self.player.velocity[0] -= SPEED
         if keys[pygame.K_RIGHT]:
-            self.player.dx += SPEED
+            self.player.velocity[0] += SPEED
         if keys[pygame.K_UP]:
-            self.player.dy -= SPEED
+            self.player.velocity[1] -= SPEED
         if keys[pygame.K_DOWN]:
-            self.player.dy += SPEED
+            self.player.velocity[1] += SPEED
 
-        if self.player.dx!=0 or self.player.dy!=0:
-            length = math.sqrt(self.player.dx**2 + self.player.dy**2)
-            self.player.dx=(self.player.dx/length)*SPEED
-            self.player.dy=(self.player.dy/length)*SPEED
+        if self.player.velocity[0]!=0 or self.player.velocity[1]!=0:
+            length = math.sqrt(self.player.velocity[0]**2 + self.player.velocity[1]**2)
+            self.player.velocity[0]=(self.player.velocity[0]/length)*SPEED
+            self.player.velocity[1]=(self.player.velocity[1]/length)*SPEED
         
-        self.player.pos[0] += dx
-        self.player.pos[1] += dy
+        self.player.pos[0] += self.player.velocity[0]
+        self.player.pos[1] += self.player.velocity[1]
 
-    def will_collide(self):
-        original_pos = self.
 
-    def update(self):
-        self.state = self.check_collision()
-        if self.state != State.COLLISION:
-            self.check_input()
-        
+    def update(self,entities):
+        for entity in entities:
+            entity.pos[0] += entity.velocity[0]
+            entity.pos[1] += entity.velocity[1]
 
 running=True
-game_state = GameState(red_ball,red_ball,blue_ball)
+enitites=[red_ball,blue_ball]
+game_state = GameState(enitites)
 while running:
 
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
     
-
-    game_state.update()
+    for entity in game_state.entities:
+        entity.update()
+    
+    for i in range(len(game_state.entities)):
+        for j in range(i+1,len(game_state.entities)):
+            game_state.check_collision(game_state.entities[i],game_state.entities[j])
+    
+   
 
     # Отрисовка
     screen.fill(Colors.WHITE)
