@@ -8,7 +8,7 @@ import random
 
 pygame.init()
 
-screen = pygame.display.set_mode((800, 600))
+screen = pygame.display.set_mode((1280, 720))
 pygame.display.set_caption("My Game")
 clock = pygame.time.Clock()
 
@@ -52,7 +52,11 @@ class GameState:
  
 
     def apply_forces(self, dt):
+        k=2
+        e = 0.5
         for i in range(len(self.entities)):
+
+            
             a = self.entities[i]
 
             for j in range(i+1, len(self.entities)):
@@ -60,7 +64,7 @@ class GameState:
                 dx = a.pos[0] - b.pos[0]
                 dy = a.pos[1] - b.pos[1]
                 distance = math.sqrt(dx**2 + dy**2)
-
+                radius_sum = a.radius + b.radius
                 if distance == 0:
                     continue
 
@@ -70,17 +74,27 @@ class GameState:
                 R = a.radius + b.radius
                 overlap = R - distance
                 if overlap > 0:
-                    # Сила пропорциональна скорости объектов
-                    relative_speed = math.sqrt((a.velocity[0] - b.velocity[0])**2 + (a.velocity[1] - b.velocity[1])**2)
-                    force = overlap * relative_speed * (a.mass * b.mass) / (a.mass + b.mass)
-                    fx = nx * force
-                    fy = ny * force
 
-                    a.velocity[0] += fx / a.mass * dt
-                    a.velocity[1] += fy / a.mass * dt
-                    b.velocity[0] -= fx / b.mass * dt
-                    b.velocity[1] -= fy / b.mass * dt
-    
+                    rvx = a.velocity[0] - b.velocity[0]
+                    rvy = a.velocity[1] - b.velocity[1]
+                    vel_along_normal = rvx * nx + rvy * ny 
+
+                    if vel_along_normal > 0:
+                        continue
+                    
+                    vel_along_normal -= (abs(vel_along_normal) **k)
+                    j_impulse = -(1 + e) * vel_along_normal
+                    j_impulse /= (1 / a.mass + 1 / b.mass)
+
+                    impulse_x = j_impulse * nx
+                    impulse_y = j_impulse * ny
+
+
+                    a.velocity[0] += impulse_x / a.mass * dt
+                    a.velocity[1] += impulse_y / a.mass * dt
+                    b.velocity[0] -= impulse_x / b.mass * dt
+                    b.velocity[1] -= impulse_y / b.mass * dt
+
     def apply_boundaries(self, dt):
         w, h = screen.get_size()
         w /= PIXELS_PER_METER  # Ширина в метрах
@@ -138,14 +152,22 @@ class GameState:
 
 running=True
 
+balls = [
+    Ball(
+    color = Colors.RED,
+    pos = [400, 300],
+    radius = 10,
+    mass = 10),
+]
 
-balls = [Ball(
+balls+=[Ball(
     color = random.choice([Colors.RED, Colors.BLUE]),
     pos = [random.randint(50, 750), random.randint(50, 550)],\
-    radius = random.randint(2, 40), 
+    radius = random.randint(10, 100), 
     mass = random.randint(2, 50)) for _ in range(10)]
-enitites=balls
-game_state = GameState(enitites)
+
+entities=balls
+game_state = GameState(entities)
 
 
 # Главный игровой цикл
