@@ -118,12 +118,6 @@ class GameState:
             player.velocity[1] += SPEED
 
 
-        
-        player.velocity[0] *= (1 - FRICTION)
-        player.velocity[1] *= (1 - FRICTION)
-        
-        player.pos[0] += player.velocity[0]
-        player.pos[1] += player.velocity[1]
 
 
     def update(self):
