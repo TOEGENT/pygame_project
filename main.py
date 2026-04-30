@@ -4,13 +4,20 @@ import pygame
 import sys
 import math
 
+
+
 pygame.init()
 
 screen = pygame.display.set_mode((800, 600))
 pygame.display.set_caption("My Game")
+clock = pygame.time.Clock()
 
-SPEED = 0.001
+
+ACCELERATION = 100
 FRICTION = 0.0005
+FIXED_DT = 1/120
+accumulator = 0
+
 
 class State:
     COLLISION = "Collision"
@@ -102,33 +109,33 @@ class GameState:
                 entity1.velocity[1] = -entity1.velocity[1]
                 entity1.pos[1] = max(entity1.radius, min(screen.get_height() - entity1.radius, entity1.pos[1]))
 
-    def check_input(self):
+    def check_input(self, dt):
         keys = pygame.key.get_pressed()
         player = self.entities[0]
         print(player.velocity)
 
         # Управление красным шаром
         if keys[pygame.K_LEFT]:
-            player.velocity[0] -= SPEED
+            player.velocity[0] -= ACCELERATION *dt
         if keys[pygame.K_RIGHT]:
-            player.velocity[0] += SPEED
+            player.velocity[0] += ACCELERATION *dt
         if keys[pygame.K_UP]:
-            player.velocity[1] -= SPEED
+            player.velocity[1] -= ACCELERATION *dt
         if keys[pygame.K_DOWN]:
-            player.velocity[1] += SPEED
+            player.velocity[1] += ACCELERATION * dt
 
 
 
 
-    def update(self):
-        self.check_input()
+    def update(self, dt):
+        self.check_input(dt)
 
         for entity in self.entities:
 
             entity.velocity[0] *= (1 - FRICTION)
 
-            entity.pos[0] += entity.velocity[0]
-            entity.pos[1] += entity.velocity[1]
+            entity.pos[0] += entity.velocity[0] * dt
+            entity.pos[1] += entity.velocity[1] * dt
         
         self.check_collisions()
 
@@ -137,15 +144,20 @@ running=True
 enitites=[red_ball,blue_ball]
 game_state = GameState(enitites)
 
+
 # Главный игровой цикл
 while running:
+
+    dt = clock.tick(60) / 1000.0
+    accumulator += dt
 
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
     
-    game_state.update()
-   
+    while accumulator >= FIXED_DT:
+        game_state.update(FIXED_DT)
+        accumulator -= FIXED_DT
 
     # Отрисовка
     screen.fill(Colors.WHITE)
