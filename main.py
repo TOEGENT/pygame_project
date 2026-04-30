@@ -3,7 +3,7 @@ from typing import List
 import pygame
 import sys
 import math
-
+import random
 
 
 pygame.init()
@@ -13,8 +13,8 @@ pygame.display.set_caption("My Game")
 clock = pygame.time.Clock()
 
 
-ACCELERATION = 100
-FRICTION = 0.0005
+ACCELERATION = 500
+FRICTION = 0.5
 FIXED_DT = 1/120
 accumulator = 0
 
@@ -38,9 +38,6 @@ class Ball:
         self.mass = mass
         self.velocity = [0,0]
 
-red_ball = Ball(Colors.RED,[100,300],30,1)
-blue_ball = Ball(Colors.BLUE,[700,300],30,1)
-
 
 
 
@@ -51,63 +48,53 @@ class GameState:
         
     
 
-    @staticmethod
-    def resolve_collision(ball, other):
-        # Вычисляем нормальный вектор
+ 
 
-        normal = [other.pos[0] - ball.pos[0], other.pos[1] - ball   .pos[1]]
-        distance = math.sqrt(normal[0]**2 + normal[1]**2)
-        if distance == 0:
-            return  # Избегаем деления на ноль
-        normal[0] /= distance
-        normal[1] /= distance
-
-        # Вычисляем относительную скорость
-        relative_velocity = [ball.velocity[0] - other.velocity[0],
-                             ball.velocity[1] - other.velocity[1]]
-
-        # Вычисляем скорость по нормали
-        velocity_along_normal = relative_velocity[0] * normal[0] + relative_velocity[1] * normal[1]
-
-        if velocity_along_normal > 0:
-            return  # Шары уже разлетаются
-
-        # Вычисляем коэффициент упругости (для идеального столкновения он равен 1)
-        restitution = 1
-
-        # Вычисляем импульс
-        impulse_scalar = -(1 + restitution) * velocity_along_normal
-        impulse_scalar /= (1 / ball.mass + 1 / other.mass)
-
-        impulse = [impulse_scalar * normal[0], impulse_scalar * normal[1]]
-
-        # Применяем импульс к шарам
-        ball.velocity[0] += impulse[0] / ball.mass
-        ball.velocity[1] += impulse[1] / ball.mass
-        other.velocity[0] -= impulse[0] / other.mass
-        other.velocity[1] -= impulse[1] / other.mass
-
-    def check_collisions(self):
-
-
+    def apply_forces(self,dt):
         for i in range(len(self.entities)):
-            entity1 = self.entities[i]
+            a = self.entities[i]
 
             for j in range(i+1, len(self.entities)):
-                entity2 = self.entities[j]
-                dx = entity1.pos[0] - entity2.pos[0]
-                dy = entity1.pos[1] - entity2.pos[1]
+                b = self.entities[j]
+                dx = a.pos[0] - b.pos[0]
+                dy = a.pos[1] - b.pos[1]
                 distance = math.sqrt(dx**2 + dy**2)
 
-                if distance < entity1.radius + entity2.radius:
-                    self.resolve_collision(entity1, entity2)
+                if distance==0:
+                    continue
+                
+                nx = dx / distance
+                ny = dy / distance
+
+                R = a.radius + b.radius
+                overlap = R - distance
+                if overlap > 0:
+                    force = overlap * (a.mass * b.mass) / (a.mass + b.mass)
+                    fx = nx * force
+                    fy = ny * force
+
+                    a.velocity[0] += fx / a.mass * dt
+                    a.velocity[1] += fy / a.mass * dt
+                    b.velocity[0] -= fx / b.mass * dt
+                    b.velocity[1] -= fy / b.mass * dt
+    
+    def apply_boundaries(self,dt):
+        w,h = screen.get_size()
+
+        for entity in self.entities:
+            if entity.pos[0] - entity.radius < 0:
+                entity.pos[0] = entity.radius
+                entity.velocity[0] *= -0.5
+            elif entity.pos[0] + entity.radius > w:
+                entity.pos[0] = w - entity.radius
+                entity.velocity[0] *= -0.5
             
-            if entity1.pos[0] - entity1.radius < 0 or entity1.pos[0] + entity1.radius > 800:
-                entity1.velocity[0] = -entity1.velocity[0]
-                entity1.pos[0] = max(entity1.radius, min(screen.get_width() - entity1.radius, entity1.pos[0]))
-            if entity1.pos[1] - entity1.radius < 0 or entity1.pos[1] + entity1.radius > 600:
-                entity1.velocity[1] = -entity1.velocity[1]
-                entity1.pos[1] = max(entity1.radius, min(screen.get_height() - entity1.radius, entity1.pos[1]))
+            if entity.pos[1] - entity.radius < 0:
+                entity.pos[1] = entity.radius
+                entity.velocity[1] *= -0.5
+            elif entity.pos[1] + entity.radius > h:
+                entity.pos[1] = h - entity.radius
+                entity.velocity[1] *= -0.5
 
     def check_input(self, dt):
         keys = pygame.key.get_pressed()
@@ -130,18 +117,25 @@ class GameState:
     def update(self, dt):
         self.check_input(dt)
 
+        self.apply_forces(dt)
+
         for entity in self.entities:
 
-            entity.velocity[0] *= (1 - FRICTION)
+            entity.velocity[0] *= (1 - FRICTION*dt)
+            entity.velocity[1] *= (1 - FRICTION*dt)
 
             entity.pos[0] += entity.velocity[0] * dt
             entity.pos[1] += entity.velocity[1] * dt
+
+        self.apply_boundaries(dt)
         
-        self.check_collisions()
 
 
 running=True
-enitites=[red_ball,blue_ball]
+
+
+balls = [Ball(random.choice([Colors.RED, Colors.BLUE]), [random.randint(50, 750), random.randint(50, 550)], random.randint(20, 40), random.randint(1, 5)) for _ in range(10)]
+enitites=balls
 game_state = GameState(enitites)
 
 
@@ -161,8 +155,8 @@ while running:
 
     # Отрисовка
     screen.fill(Colors.WHITE)
-    pygame.draw.circle(screen,red_ball.color,red_ball.pos,red_ball.radius)
-    pygame.draw.circle(screen,blue_ball.color,blue_ball.pos,blue_ball.radius)
+    for ball in game_state.entities:
+        pygame.draw.circle(screen, ball.color, (int(ball.pos[0]), int(ball.pos[1])), ball.radius)
 
     # Обновление кадра
     pygame.display.flip() 
