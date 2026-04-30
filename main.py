@@ -17,6 +17,7 @@ ACCELERATION = 500
 FRICTION = 0.5
 FIXED_DT = 1/120
 accumulator = 0
+PIXELS_PER_METER = 10 
 
 
 class State:
@@ -31,12 +32,12 @@ class Colors:
     WHITE = (255, 255, 255)
 
 class Ball:
-    def __init__(self,color,pos,radius,mass):
+    def __init__(self, color, pos, radius, mass):
         self.color = color
-        self.pos = pos
-        self.radius = radius
-        self.mass = mass
-        self.velocity = [0,0]
+        self.pos = [p / PIXELS_PER_METER for p in pos]  # Перевод в метры
+        self.radius = radius / PIXELS_PER_METER  # Радиус в метрах
+        self.mass = mass  # Масса в килограммах
+        self.velocity = [0, 0]  # Скорость в м/с
 
 
 
@@ -50,7 +51,7 @@ class GameState:
 
  
 
-    def apply_forces(self,dt):
+    def apply_forces(self, dt):
         for i in range(len(self.entities)):
             a = self.entities[i]
 
@@ -60,16 +61,18 @@ class GameState:
                 dy = a.pos[1] - b.pos[1]
                 distance = math.sqrt(dx**2 + dy**2)
 
-                if distance==0:
+                if distance == 0:
                     continue
-                
+
                 nx = dx / distance
                 ny = dy / distance
 
                 R = a.radius + b.radius
                 overlap = R - distance
                 if overlap > 0:
-                    force = overlap * (a.mass * b.mass) / (a.mass + b.mass)
+                    # Сила пропорциональна скорости объектов
+                    relative_speed = math.sqrt((a.velocity[0] - b.velocity[0])**2 + (a.velocity[1] - b.velocity[1])**2)
+                    force = overlap * relative_speed * (a.mass * b.mass) / (a.mass + b.mass)
                     fx = nx * force
                     fy = ny * force
 
@@ -78,8 +81,10 @@ class GameState:
                     b.velocity[0] -= fx / b.mass * dt
                     b.velocity[1] -= fy / b.mass * dt
     
-    def apply_boundaries(self,dt):
-        w,h = screen.get_size()
+    def apply_boundaries(self, dt):
+        w, h = screen.get_size()
+        w /= PIXELS_PER_METER  # Ширина в метрах
+        h /= PIXELS_PER_METER  # Высота в метрах
 
         for entity in self.entities:
             if entity.pos[0] - entity.radius < 0:
@@ -88,7 +93,7 @@ class GameState:
             elif entity.pos[0] + entity.radius > w:
                 entity.pos[0] = w - entity.radius
                 entity.velocity[0] *= -0.5
-            
+
             if entity.pos[1] - entity.radius < 0:
                 entity.pos[1] = entity.radius
                 entity.velocity[1] *= -0.5
@@ -134,7 +139,11 @@ class GameState:
 running=True
 
 
-balls = [Ball(random.choice([Colors.RED, Colors.BLUE]), [random.randint(50, 750), random.randint(50, 550)], random.randint(20, 40), random.randint(1, 5)) for _ in range(10)]
+balls = [Ball(
+    color = random.choice([Colors.RED, Colors.BLUE]),
+    pos = [random.randint(50, 750), random.randint(50, 550)],\
+    radius = random.randint(2, 40), 
+    mass = random.randint(2, 50)) for _ in range(10)]
 enitites=balls
 game_state = GameState(enitites)
 
@@ -156,7 +165,9 @@ while running:
     # Отрисовка
     screen.fill(Colors.WHITE)
     for ball in game_state.entities:
-        pygame.draw.circle(screen, ball.color, (int(ball.pos[0]), int(ball.pos[1])), ball.radius)
+        pygame.draw.circle(screen, ball.color, 
+                           (int(ball.pos[0] * PIXELS_PER_METER), int(ball.pos[1] * PIXELS_PER_METER)), 
+                           int(ball.radius * PIXELS_PER_METER))
 
     # Обновление кадра
     pygame.display.flip() 
