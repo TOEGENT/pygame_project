@@ -20,6 +20,22 @@ accumulator = 0
 PIXELS_PER_METER = 10 
 
 
+
+class Camera:
+    def __init__(self,width,height):
+        self.offset = [0,0]
+        self.width = width
+        self.height = height
+
+    def update(self,target_pos):
+        self.offset[0] = target_pos[0]-self.width / (2*PIXELS_PER_METER)
+        self.offset[1] = target_pos[1]-self.height / (2*PIXELS_PER_METER)
+    
+        return [target_pos[0] - self.offset[0],target_pos[1]-self.offset[1]]
+
+
+
+
 class State:
     COLLISION = "Collision"
     NO_COLLISION = "No Collision"
@@ -169,6 +185,8 @@ balls+=[Ball(
 entities=balls
 game_state = GameState(entities)
 
+camera = Camera(screen.get_width(),screen.get_height())
+
 
 # Главный игровой цикл
 while running:
@@ -182,6 +200,7 @@ while running:
     
     while accumulator >= FIXED_DT:
         game_state.update(FIXED_DT)
+        camera.update(game_state.entities[0].pos)
         accumulator -= FIXED_DT
 
     # Отрисовка
