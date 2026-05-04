@@ -1,3 +1,4 @@
+from turtle import distance
 from typing import List
 
 import pygame
@@ -28,12 +29,11 @@ class Camera:
         self.height = height
 
     def update(self,target_pos):
-        self.offset[0] = target_pos[0]-self.width / (2*PIXELS_PER_METER)
-        self.offset[1] = target_pos[1]-self.height / (2*PIXELS_PER_METER)
+        self.offset[0] = target_pos[0]-(self.width / (2*PIXELS_PER_METER))
+        self.offset[1] = target_pos[1]-(self.height / (2*PIXELS_PER_METER))
     
-        return [target_pos[0] - self.offset[0],target_pos[1]-self.offset[1]]
-
-
+    def apply(self,target_pos):
+        return [(target_pos[0] - self.offset[0])*PIXELS_PER_METER,(target_pos[1]-self.offset[1])*PIXELS_PER_METER]
 
 
 class State:
@@ -136,15 +136,28 @@ class GameState:
         player = self.entities[0]
         print(player.velocity)
 
+
+        screen_center = [screen.get_width() / (2), screen.get_height() / (2)]
+        
+        mouse_x,mouse_y = pygame.mouse.get_pos()
+        mouse_pos = [mouse_x,mouse_y]
+
+        max_distance = math.sqrt((screen.get_width() / 2)**2 + (screen.get_height() / 2)**2)
+
+
+        dx = mouse_pos[0] - screen_center[0]
+        dy = mouse_pos[1] - screen_center[1]
+        distance = math.sqrt(dx**2 + dy**2)
+
+        acceleration_factor = distance / max_distance
+        if distance > 0:
+            nx = dx / distance
+            ny = dy / distance
+
+            player.velocity[0] += nx * ACCELERATION* acceleration_factor * dt / (player.mass*player.radius)
+            player.velocity[1] += ny *ACCELERATION*acceleration_factor * dt / (player.mass*player.radius)
         # Управление красным шаром
-        if keys[pygame.K_LEFT]:
-            player.velocity[0] -= ACCELERATION *dt
-        if keys[pygame.K_RIGHT]:
-            player.velocity[0] += ACCELERATION *dt
-        if keys[pygame.K_UP]:
-            player.velocity[1] -= ACCELERATION *dt
-        if keys[pygame.K_DOWN]:
-            player.velocity[1] += ACCELERATION * dt
+        
 
 
 
@@ -206,9 +219,8 @@ while running:
     # Отрисовка
     screen.fill(Colors.WHITE)
     for ball in game_state.entities:
-        pygame.draw.circle(screen, ball.color, 
-                           (int(ball.pos[0] * PIXELS_PER_METER), int(ball.pos[1] * PIXELS_PER_METER)), 
-                           int(ball.radius * PIXELS_PER_METER))
+        screen_pos = camera.apply(ball.pos)
+        pygame.draw.circle(screen, ball.color, screen_pos, int(ball.radius * PIXELS_PER_METER))
 
     # Обновление кадра
     pygame.display.flip() 
