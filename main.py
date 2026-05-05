@@ -19,6 +19,33 @@ FRICTION = 0.5
 FIXED_DT = 1/120
 accumulator = 0
 PIXELS_PER_METER = 10 
+HEIGHT = 2000
+WIDTH = 2000
+
+MAX_MASS = 50
+MIN_ALPHA = 0
+MAX_ALPHA = 255
+
+def draw_grid(surface,camera_offset,screen_width,screen_height,cell_size,color):
+
+    offset_x,offset_y = camera_offset[0]*PIXELS_PER_METER,camera_offset[1]*PIXELS_PER_METER
+
+    cell_px = cell_size * PIXELS_PER_METER
+
+
+    start_x = int(-offset_x % cell_px)
+    start_y = int(-offset_y % cell_px)
+    for x in range(start_x, screen_width, cell_px):
+        pygame.draw.line(surface, color, (x, 10), (x, screen_height))
+    for y in range(start_y, screen_height, cell_px):
+        pygame.draw.line(surface, color, (10, y), (screen_width, y))
+
+
+def draw_ball_with_alpha(surface,color,position,radius,alpha):
+    temp_surface = pygame.Surface((radius*2, radius*2), pygame.SRCALPHA)
+    temp_color = (*color, int(alpha))
+    pygame.draw.circle(temp_surface, temp_color, (radius, radius), radius)
+    surface.blit(temp_surface, (position[0] - radius, position[1] - radius))
 
 
 
@@ -50,8 +77,8 @@ class Colors:
 class Ball:
     def __init__(self, color, pos, radius, mass):
         self.color = color
-        self.pos = [p / PIXELS_PER_METER for p in pos]  # Перевод в метры
-        self.radius = radius / PIXELS_PER_METER  # Радиус в метрах
+        self.pos = pos
+        self.radius = radius  # Радиус в метрах
         self.mass = mass  # Масса в килограммах
         self.velocity = [0, 0]  # Скорость в м/с
 
@@ -64,7 +91,44 @@ class GameState:
         self.entities = entites[0]
         
     
+    def apply_absorption(self, dt):
+        k = 2
 
+        for i in range(len(self.entities)):
+            for j in range(i+1, len(self.entities)):
+                a = self.entities[i]
+                b = self.entities[j]
+                dx = a.pos[0] - b.pos[0]
+                dy = a.pos[1] - b.pos[1]
+                distance = math.sqrt(dx**2 + dy**2)
+                radius_sum = a.radius + b.radius
+                if distance == 0:
+                    continue
+                
+                overlap = radius_sum - distance
+                if overlap <= 0:
+                    continue
+
+                if a.radius > b.radius:
+                    big,small = a,b
+                elif b.radius > a.radius:
+                    big,small = b,a
+                else:
+                    continue
+                
+                mass_factor = abs((big.mass - small.mass))/max(big.mass, small.mass)
+                radius_factor = small.radius / big.radius
+
+                transfer_rate = k*overlap*mass_factor*radius_factor
+
+                dm = transfer_rate * dt
+                print(dm,overlap)
+                dm = max(0, min(dm, small.mass))
+                
+                small.mass -= dm
+                big.mass += dm
+                small.radius -=dm
+                big.radius +=dm
  
 
     def apply_forces(self, dt):
@@ -90,7 +154,7 @@ class GameState:
                 R = a.radius + b.radius
                 overlap = R - distance
                 if overlap > 0:
-
+                    
                     rvx = a.velocity[0] - b.velocity[0]
                     rvy = a.velocity[1] - b.velocity[1]
                     vel_along_normal = rvx * nx + rvy * ny 
@@ -112,9 +176,7 @@ class GameState:
                     b.velocity[1] -= impulse_y / b.mass * dt
 
     def apply_boundaries(self, dt):
-        w, h = screen.get_size()
-        w /= PIXELS_PER_METER  # Ширина в метрах
-        h /= PIXELS_PER_METER  # Высота в метрах
+        w,h = WIDTH, HEIGHT
 
         for entity in self.entities:
             if entity.pos[0] - entity.radius < 0:
@@ -132,9 +194,7 @@ class GameState:
                 entity.velocity[1] *= -0.5
 
     def check_input(self, dt):
-        keys = pygame.key.get_pressed()
         player = self.entities[0]
-        print(player.velocity)
 
 
         screen_center = [screen.get_width() / (2), screen.get_height() / (2)]
@@ -164,8 +224,10 @@ class GameState:
 
     def update(self, dt):
         self.check_input(dt)
-
         self.apply_forces(dt)
+        self.apply_absorption(dt)
+        
+        self.entities = [e for e in self.entities if e.mass > 0.05]
 
         for entity in self.entities:
 
@@ -185,15 +247,14 @@ balls = [
     Ball(
     color = Colors.RED,
     pos = [400, 300],
-    radius = 10,
+    radius = 1,
     mass = 10),
 ]
-
 balls+=[Ball(
     color = random.choice([Colors.RED, Colors.BLUE]),
-    pos = [random.randint(50, 750), random.randint(50, 550)],\
-    radius = random.randint(10, 100), 
-    mass = random.randint(2, 50)) for _ in range(10)]
+    pos = [random.randint(0, WIDTH), random.randint(0, HEIGHT)],\
+    radius = random.randint(1, 10), 
+    mass = random.randint(2, 50)) for _ in range(100)]
 
 entities=balls
 game_state = GameState(entities)
@@ -218,9 +279,13 @@ while running:
 
     # Отрисовка
     screen.fill(Colors.WHITE)
+    draw_grid(screen,camera.offset,screen.get_width(),screen.get_height(),20,(200,200,200))
     for ball in game_state.entities:
+
         screen_pos = camera.apply(ball.pos)
-        pygame.draw.circle(screen, ball.color, screen_pos, int(ball.radius * PIXELS_PER_METER))
+        mass_norm = max(0, min(1, ball.mass / MAX_MASS))
+        alpha = int(MIN_ALPHA + mass_norm * (MAX_ALPHA - MIN_ALPHA))
+        draw_ball_with_alpha(screen, ball.color, screen_pos, int(ball.radius * PIXELS_PER_METER), alpha)
 
     # Обновление кадра
     pygame.display.flip() 
