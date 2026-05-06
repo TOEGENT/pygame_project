@@ -19,18 +19,21 @@ FRICTION = 0.5
 FIXED_DT = 1/120
 accumulator = 0
 PIXELS_PER_METER = 10 
-HEIGHT = 2000
-WIDTH = 2000
+HEIGHT = 1000
+WIDTH = 1000
 
-MAX_MASS = 50
+MAX_MASS = 20
 MIN_ALPHA = 0
 MAX_ALPHA = 255
+MAX_RADIUS = 20
 
-def draw_grid(surface,camera_offset,screen_width,screen_height,cell_size,color):
 
-    offset_x,offset_y = camera_offset[0]*PIXELS_PER_METER,camera_offset[1]*PIXELS_PER_METER
+def draw_grid(surface,camera,screen_width,screen_height,cell_size,color):
 
-    cell_px = cell_size * PIXELS_PER_METER
+    offset_x,offset_y = camera.offset[0]*PIXELS_PER_METER*camera.zoom,camera.offset[1]*PIXELS_PER_METER*camera.zoom
+
+    cell_px = cell_size * PIXELS_PER_METER*camera.zoom
+    cell_px = max(1,round(cell_px))
 
 
     start_x = int(-offset_x % cell_px)
@@ -54,13 +57,23 @@ class Camera:
         self.offset = [0,0]
         self.width = width
         self.height = height
+        self.zoom = 1.0
 
-    def update(self,target_pos):
-        self.offset[0] = target_pos[0]-(self.width / (2*PIXELS_PER_METER))
-        self.offset[1] = target_pos[1]-(self.height / (2*PIXELS_PER_METER))
-    
+    def update(self,target_pos,target_radius):
+        alpha = 0.5
+        target_zoom = 2.0/(max(target_radius,1)**alpha)
+        self.zoom += (target_zoom - self.zoom) * 0.2
+
+        target_offset_x = target_pos[0] - (self.width / (2*PIXELS_PER_METER*self.zoom))
+        target_offset_y = target_pos[1] - (self.height / (2*PIXELS_PER_METER*self.zoom))
+
+
+        self.offset[0] += (target_offset_x-self.offset[0]) *0.1
+        self.offset[1] += (target_offset_y - self.offset[1])*0.1
+
     def apply(self,target_pos):
-        return [(target_pos[0] - self.offset[0])*PIXELS_PER_METER,(target_pos[1]-self.offset[1])*PIXELS_PER_METER]
+        return [(target_pos[0] - self.offset[0])*PIXELS_PER_METER*self.zoom,
+                (target_pos[1]-self.offset[1])*PIXELS_PER_METER*self.zoom]
 
 
 class State:
@@ -101,23 +114,24 @@ class GameState:
                 dx = a.pos[0] - b.pos[0]
                 dy = a.pos[1] - b.pos[1]
                 distance = math.sqrt(dx**2 + dy**2)
-                radius_sum = a.radius + b.radius
                 if distance == 0:
                     continue
                 
-                overlap = radius_sum - distance
-                if overlap <= 0:
-                    continue
-
+                
                 if a.radius > b.radius:
                     big,small = a,b
                 elif b.radius > a.radius:
                     big,small = b,a
                 else:
                     continue
+
+                if distance+small.radius > big.radius:
+                    continue
+
                 
                 mass_factor = abs((big.mass - small.mass))/max(big.mass, small.mass)
                 radius_factor = small.radius / big.radius
+                overlap = big.radius - distance
 
                 transfer_rate = k*overlap*mass_factor*radius_factor
 
@@ -214,8 +228,17 @@ class GameState:
             nx = dx / distance
             ny = dy / distance
 
-            player.velocity[0] += nx * ACCELERATION* acceleration_factor * dt / (player.mass*player.radius)
-            player.velocity[1] += ny *ACCELERATION*acceleration_factor * dt / (player.mass*player.radius)
+            m = max(0, min(1, player.mass / MAX_MASS))
+            r = max(0, min(1, player.radius / MAX_RADIUS))
+            mass_factor = 1 /(1+4.0*m)
+            radius_factor = 1/(1+3.0*r)
+
+
+            speed_factor = mass_factor*radius_factor
+
+
+            player.velocity[0] += nx * ACCELERATION* acceleration_factor * dt * speed_factor
+            player.velocity[1] += ny *ACCELERATION*acceleration_factor * dt * speed_factor
         # Управление красным шаром
         
 
@@ -227,7 +250,7 @@ class GameState:
         self.apply_forces(dt)
         self.apply_absorption(dt)
         
-        self.entities = [e for e in self.entities if e.mass > 0.05]
+        self.entities = [e for e in self.entities if e.mass > 0.1 and e.radius > 0.1]
 
         for entity in self.entities:
 
@@ -247,8 +270,8 @@ balls = [
     Ball(
     color = Colors.RED,
     pos = [400, 300],
-    radius = 1,
-    mass = 10),
+    radius = 50,
+    mass = 2),
 ]
 balls+=[Ball(
     color = random.choice([Colors.RED, Colors.BLUE]),
@@ -274,18 +297,18 @@ while running:
     
     while accumulator >= FIXED_DT:
         game_state.update(FIXED_DT)
-        camera.update(game_state.entities[0].pos)
+        camera.update(game_state.entities[0].pos,game_state.entities[0].radius)
         accumulator -= FIXED_DT
 
     # Отрисовка
     screen.fill(Colors.WHITE)
-    draw_grid(screen,camera.offset,screen.get_width(),screen.get_height(),20,(200,200,200))
+    draw_grid(screen,camera,screen.get_width(),screen.get_height(),20,(200,200,200))
     for ball in game_state.entities:
 
         screen_pos = camera.apply(ball.pos)
         mass_norm = max(0, min(1, ball.mass / MAX_MASS))
         alpha = int(MIN_ALPHA + mass_norm * (MAX_ALPHA - MIN_ALPHA))
-        draw_ball_with_alpha(screen, ball.color, screen_pos, int(ball.radius * PIXELS_PER_METER), alpha)
+        draw_ball_with_alpha(screen, ball.color, screen_pos, int(ball.radius * PIXELS_PER_METER*camera.zoom), alpha)
 
     # Обновление кадра
     pygame.display.flip() 
