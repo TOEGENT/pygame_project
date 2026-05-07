@@ -33,15 +33,19 @@ def draw_grid(surface,camera,screen_width,screen_height,cell_size,color):
     offset_x,offset_y = camera.offset[0]*PIXELS_PER_METER*camera.zoom,camera.offset[1]*PIXELS_PER_METER*camera.zoom
 
     cell_px = cell_size * PIXELS_PER_METER*camera.zoom
-    cell_px = max(1,round(cell_px))
 
 
     start_x = int(-offset_x % cell_px)
     start_y = int(-offset_y % cell_px)
-    for x in range(start_x, screen_width, cell_px):
-        pygame.draw.line(surface, color, (x, 10), (x, screen_height))
-    for y in range(start_y, screen_height, cell_px):
-        pygame.draw.line(surface, color, (10, y), (screen_width, y))
+    x = start_x
+    while x < screen_width:
+        pygame.draw.line(surface, color, (x, 0), (x, screen_height))
+        x += cell_px
+    y = start_y
+    while y < screen_height:
+        pygame.draw.line(surface, color, (0, y), (screen_width, y))
+        y += cell_px
+
 
 
 def draw_ball_with_alpha(surface,color,position,radius,alpha):
