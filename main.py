@@ -19,14 +19,15 @@ FRICTION = 0.1
 FIXED_DT = 1/15
 accumulator = 0
 PIXELS_PER_METER = 10 
-HEIGHT = 10
-WIDTH = 10
+HEIGHT = 100
+WIDTH = 100
 
 MAX_MASS = 20
 MIN_ALPHA = 0
 MAX_ALPHA = 255
 MAX_RADIUS = 20
-
+MAX_SPEED = 100
+MAX_ACCELERATION = 1000
 
 
 def edge_damping(x,p=2.0):
@@ -80,8 +81,8 @@ class Camera:
         target_offset_y = target_pos[1] - (self.height / (2*PIXELS_PER_METER*self.zoom))
 
 
-        self.offset[0] += (target_offset_x-self.offset[0]) *0.4
-        self.offset[1] += (target_offset_y - self.offset[1])*0.4
+        self.offset[0] += (target_offset_x-self.offset[0]) *0.7
+        self.offset[1] += (target_offset_y - self.offset[1])*0.7
 
     def apply(self,target_pos):
         return [(target_pos[0] - self.offset[0])*PIXELS_PER_METER*self.zoom,
@@ -157,34 +158,64 @@ class GameState:
  
 
     def apply_forces(self, dt):
-        SOFTENING = 5
-        K_COLUMB = 1300
+        k = 100000
+        c = 6
+        gamma = 80
+        fmax = 1e5
+        eps = 1e-6
+        
         for i in range(len(self.entities)):
             a = self.entities[i]
+            density_a = a.mass / a.radius**2
             for j in range(i+1, len(self.entities)):
                 b = self.entities[j]
+
                 dx = a.pos[0] - b.pos[0]
                 dy = a.pos[1] - b.pos[1]
-                distance = math.sqrt(dx**2 + dy**2)
-                if distance > a.radius+b.radius:
+                dist = math.hypot(dx, dy)
+                density_b = b.mass / b.radius**2
+
+                peff= (density_a+density_b)/2
+                if dist < eps:
                     continue
 
-                nx = dx / distance
-                ny = dy / distance
+                overlap = (a.radius + b.radius) - dist
+                if overlap <=0:
+                    continue
 
-                #force_to_a = ((b.mass/abs(max(1,b.radius-a.radius))))/(a.mass/a.radius)
-  
-                #force_to_b = (a.mass/abs(max(b.radius-a.radius,1))) / (b.mass/b.radius)
-                print(f"a:{self.entities.index(a)}, b:{self.entities.index(b)} \n a-mass-radius: {a.mass,a.radius}, \n b-mass-radius: {b.mass,b.radius}")
-                print(f"b.velocity[0]:{b.velocity[0]}, b.velocity[1]: {b.velocity[1]} \n a.velocity[0]:{a.velocity[0]}, a.velocity[1]: {a.velocity[1]} ")
-                fx_a = nx*b.mass*b.velocity[0]**2
-                fy_a = ny*b.mass*b.velocity[1]**2
-                fx_b = nx*a.mass*a.velocity[0]**2
-                fy_b=ny * a.mass*a.velocity[1]**2
-                a.velocity[0] += fx_a * dt
-                a.velocity[1] += fy_a * dt 
-                b.velocity[0] -= fx_b * dt
-                b.velocity[1] = fy_b  * dt
+
+                nx = dx / dist
+                ny = dy / dist
+
+                vrel_x = a.velocity[0] - b.velocity[0]
+                vrel_y = a.velocity[1] - b.velocity[1]
+                vrel_n = vrel_x * nx + vrel_y * ny
+
+                alpha = overlap / max(min(a.radius, b.radius),eps)
+
+                if alpha <=0.5:
+                    
+                    f_mag = peff * overlap - c * vrel_n 
+
+                    f_mag = max(-fmax,min(fmax,f_mag))
+                    Fx = f_mag * nx
+                    Fy = f_mag * ny
+                else:
+                    j = -(1+0.2)*vrel_n
+                    j*=peff
+                    j/=(1/a.mass + 1/b.mass)
+                    j = max(-fmax,min(fmax,j))
+                    Jx = j * nx
+                    Jy = j * ny
+
+                    Fx = Jx
+                    Fy = Jy
+                
+
+                a.velocity[0] += (Fx/a.mass) * dt
+                a.velocity[1] += (Fy/a.mass) * dt 
+                b.velocity[0] -= (Fx/b.mass) * dt
+                b.velocity[1] -= (Fy/b.mass)  * dt
                 
                 
 
@@ -218,13 +249,24 @@ class GameState:
         mouse_pos = [mouse_x,mouse_y]
         dx = mouse_pos[0] - screen_center[0]
         dy = mouse_pos[1] - screen_center[1]
+
+        spring = 1
+        damping = 0.95
+
         distance = math.sqrt(dx**2 + dy**2)
         if distance > 0:
-            nx = dx / distance
-            ny = dy / distance
-            player.velocity[0] += nx * ACCELERATION  * dt
-            player.velocity[1] += ny * ACCELERATION  * dt
 
+            force_x = min(MAX_ACCELERATION, abs(dx * spring  * dt))
+            force_y = min(MAX_ACCELERATION, abs(dy * spring  * dt))
+            if dx < 0:
+                force_x = -force_x
+            if dy < 0:
+                force_y = -force_y
+            player.velocity[0] += force_x
+            player.velocity[1] += force_y
+
+            player.velocity[0] *= damping
+            player.velocity[1] *= damping
 
 
     def update_ai(self, dt):
@@ -300,14 +342,14 @@ balls = [
     Ball(
     color = Colors.RED,
     pos = [400, 300],
-    radius = 1,
-    mass = 10),
+    radius = 10,
+    mass = 1),
 ]
 balls+=[Ball(
     color = random.choice([Colors.RED, Colors.BLUE]),
     pos = [random.randint(0, WIDTH), random.randint(0, HEIGHT)],\
-    radius = random.randint(1,1), 
-    mass = random.randint(10,10)) for _ in range( 1)]
+    radius = random.randint(1,10), 
+    mass = random.randint(1,10)) for _ in range( 10)]
 
 entities=balls
 game_state = GameState(entities)
@@ -315,7 +357,6 @@ game_state = GameState(entities)
 camera = Camera(screen.get_width(),screen.get_height())
 
 
-# Главный игровой цикл
 while running:
 
     dt = clock.tick(60) / 1000.0
@@ -327,11 +368,10 @@ while running:
     
     while accumulator >= FIXED_DT:
         game_state.update(FIXED_DT)
-        #game_state.update_ai(FIXED_DT)
+        game_state.update_ai(FIXED_DT)
         camera.update(game_state.entities[0].pos,game_state.entities[0].radius)
         accumulator -= FIXED_DT
 
-    # Отрисовка
     screen.fill(Colors.WHITE)
     draw_grid(screen,camera,screen.get_width(),screen.get_height(),20,(200,200,200))
     for ball in game_state.entities:
@@ -341,7 +381,6 @@ while running:
         alpha = int(MIN_ALPHA + mass_norm * (MAX_ALPHA - MIN_ALPHA))
         draw_ball_with_alpha(screen, ball.color, screen_pos, int(ball.radius * PIXELS_PER_METER*camera.zoom), alpha)
 
-    # Обновление кадра
     pygame.display.flip() 
 
 
