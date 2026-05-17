@@ -108,9 +108,10 @@ class Ball:
     def __init__(self, color, pos, radius, mass):
         self.color = color
         self.pos = pos
-        self.radius = radius  # Радиус в метрах
-        self.mass = mass  # Масса в килограммах
-        self.velocity = [0, 0]  # Скорость в м/с
+        self.radius = radius 
+        self.mass = mass  
+        self.velocity = [0, 0]  
+        self.force = [0, 0]
 
 
 
@@ -162,67 +163,65 @@ class GameState:
  
 
     def apply_forces(self, dt):
-        k = 100000
-        c = 6
-        gamma = 80
-        fmax = 1e5
         eps = 1e-6
-        
-        for i in range(len(self.entities)):
+
+        visc_min = 2.0
+        visc_max = 20.0
+
+        def smoothstep(x):
+            x = 0.0 if x < 0.0 else 1.0 if x > 1.0 else x
+            return x * x * (3.0 - 2.0 * x)
+
+        n = len(self.entities)
+
+        for i in range(n):
             a = self.entities[i]
-            density_a = a.mass / a.radius**2
-            for j in range(i+1, len(self.entities)):
+            for j in range(i + 1, n):
                 b = self.entities[j]
 
-                dx = a.pos[0] - b.pos[0]
-                dy = a.pos[1] - b.pos[1]
-                dist = math.hypot(dx, dy)
-                density_b = b.mass / b.radius**2
-
-                peff= (density_a+density_b)/2
-                if dist < eps:
+                dx = b.pos[0] - a.pos[0]
+                dy = b.pos[1] - a.pos[1]
+                dist2 = dx * dx + dy * dy
+                if dist2 <= eps:
                     continue
 
-                overlap = (a.radius + b.radius) - dist
-                if overlap <=0:
+                dist = math.sqrt(dist2)
+                sum_r = a.radius + b.radius
+                overlap = sum_r - dist
+                if overlap <= 0.0:
                     continue
 
+                small, big = (a, b) if a.radius <= b.radius else (b, a)
+                inside_depth = big.radius - (dist + small.radius)
 
-                nx = dx / dist
-                ny = dy / dist
+                band = 0.15 * small.radius + eps
+                inside = smoothstep((inside_depth + band) / (2.0 * band))
 
-                vrel_x = a.velocity[0] - b.velocity[0]
-                vrel_y = a.velocity[1] - b.velocity[1]
-                vrel_n = vrel_x * nx + vrel_y * ny
+                if inside <= 0.0:
+                    continue
 
-                alpha = overlap / max(min(a.radius, b.radius),eps)
+                visc = visc_min + (visc_max - visc_min) * inside * inside
+                relx = a.velocity[0] - b.velocity[0]
+                rely = a.velocity[1] - b.velocity[1]
 
-                if alpha <=0.5:
-                    
-                    f_mag = peff * overlap - c * vrel_n 
+                fx = -visc * inside * relx
+                fy = -visc * inside * rely
 
-                    f_mag = max(-fmax,min(fmax,f_mag))
-                    Fx = f_mag * nx
-                    Fy = f_mag * ny
-                else:
-                    j = -(1+0.2)*vrel_n
-                    j*=peff
-                    j/=(1/a.mass + 1/b.mass)
-                    j = max(-fmax,min(fmax,j))
-                    Jx = j * nx
-                    Jy = j * ny
+                a.force[0] += fx
+                a.force[1] += fy
+                b.force[0] -= fx
+                b.force[1] -= fy
+    def apply_dynamics(self, dt):
+        for e in self.entities:
+            inv_mass = 1/max(e.mass,0.1)
 
-                    Fx = Jx
-                    Fy = Jy
-                
+            ax = e.force[0] * inv_mass
+            ay = e.force[1] * inv_mass
 
-                a.velocity[0] += (Fx/a.mass) * dt
-                a.velocity[1] += (Fy/a.mass) * dt 
-                b.velocity[0] -= (Fx/b.mass) * dt
-                b.velocity[1] -= (Fy/b.mass)  * dt
-                
-                
+            e.velocity[0] += ax * dt
+            e.velocity[1] += ay * dt
 
+            e.force=[0, 0]
 
 
     def apply_boundaries(self, dt):
@@ -255,22 +254,24 @@ class GameState:
         dy = mouse_pos[1] - screen_center[1]
 
         spring = 1
-        damping = 0.95
+        damping = 0.5
 
         distance = math.sqrt(dx**2 + dy**2)
         if distance > 0:
 
-            force_x = min(MAX_ACCELERATION, abs(dx * spring  * dt))
-            force_y = min(MAX_ACCELERATION, abs(dy * spring  * dt))
+            force_x = min(MAX_ACCELERATION, abs(dx * spring))
+            force_y = min(MAX_ACCELERATION, abs(dy * spring))
             if dx < 0:
                 force_x = -force_x
             if dy < 0:
                 force_y = -force_y
-            player.velocity[0] += force_x
-            player.velocity[1] += force_y
 
-            player.velocity[0] *= damping
-            player.velocity[1] *= damping
+
+            player.force[0] += force_x * mobility(player) 
+            player.force[1] += force_y * mobility(player)
+
+            player.force[0] *= damping
+            player.force[1] *= damping
 
 
     def update_ai(self, dt):
@@ -301,7 +302,7 @@ class GameState:
                 ny = dy / distance
                 
                 if a.radius > b.radius:
-                    attraction = (b.mass / a.mass) * 0.5  # Нормализация по массе
+                    attraction = (b.mass / a.mass) * 0.5 
                     distance_influence = max(0, 1.0 - distance / (a.radius * 20))
                     force = attraction * distance_influence
                     total_force_x -= force * nx
@@ -316,16 +317,21 @@ class GameState:
             speed_mult = (MAX_RADIUS / max(a.radius, 1)) * 0.5
             speed_mult = max(0.1, min(2.0, speed_mult))
 
-            a.velocity[0] += total_force_x * ACCELERATION * speed_mult * dt
-            a.velocity[1] += total_force_y * ACCELERATION * speed_mult * dt
+            a.force[0] += total_force_x * ACCELERATION * speed_mult * mobility(a)
+            a.force[1] += total_force_y * ACCELERATION * speed_mult * mobility(a)
 
 
 
     def update(self, dt):
+
+        for e in self.entities:
+            e.force = [0, 0]
+
         self.check_input(dt)
+        self.update_ai(dt)
         self.apply_forces(dt)
         self.apply_absorption(dt)
-        
+        self.apply_dynamics(dt)
         self.entities = [e for e in self.entities if e.mass > 0.1 and e.radius > 0.1]
 
         for entity in self.entities:
@@ -346,14 +352,14 @@ balls = [
     Ball(
     color = Colors.RED,
     pos = [400, 300],
-    radius = 10,
-    mass = 1),
+    radius = 5,
+    mass = 10),
 ]
 balls+=[Ball(
     color = random.choice([Colors.RED, Colors.BLUE]),
-    pos = [random.randint(0, WIDTH), random.randint(0, HEIGHT)],\
-    radius = random.randint(1,10), 
-    mass = random.randint(1,10)) for _ in range( 10)]
+    pos = [random.uniform(0, WIDTH), random.uniform(0, HEIGHT)],
+    radius = random.randint(5,MAX_RADIUS), 
+    mass = random.randint(5,MAX_MASS)) for _ in range(700)]
 
 entities=balls
 game_state = GameState(entities)
@@ -371,8 +377,9 @@ while running:
             running = False
     
     while accumulator >= FIXED_DT:
+
+        
         game_state.update(FIXED_DT)
-        game_state.update_ai(FIXED_DT)
         camera.update(game_state.entities[0].pos,game_state.entities[0].radius)
         accumulator -= FIXED_DT
 
