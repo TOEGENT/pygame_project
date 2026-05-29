@@ -13,21 +13,8 @@ screen = pygame.display.set_mode((1280, 720))
 pygame.display.set_caption("My Game")
 clock = pygame.time.Clock()
 
+import config
 
-ACCELERATION = 2
-FRICTION = 0.1
-FIXED_DT = 1/15
-accumulator = 0
-PIXELS_PER_METER = 10 
-HEIGHT = 100
-WIDTH = 100
-
-MAX_MASS = 20
-MIN_ALPHA = 0
-MAX_ALPHA = 255
-MAX_RADIUS = 20
-MAX_SPEED = 100
-MAX_ACCELERATION = 1000
 
 
 def mobility(entity):
@@ -43,9 +30,9 @@ def sigmoid01(x, k=10, x0=0.5):
 
 def draw_grid(surface,camera,screen_width,screen_height,cell_size,color):
 
-    offset_x,offset_y = camera.offset[0]*PIXELS_PER_METER*camera.zoom,camera.offset[1]*PIXELS_PER_METER*camera.zoom
+    offset_x,offset_y = camera.offset[0]*config.PIXELS_PER_METER*camera.zoom,camera.offset[1]*config.PIXELS_PER_METER*camera.zoom
 
-    cell_px = cell_size * PIXELS_PER_METER*camera.zoom
+    cell_px = cell_size * config.PIXELS_PER_METER*camera.zoom
 
 
     start_x = int(-offset_x % cell_px)
@@ -81,16 +68,16 @@ class Camera:
         target_zoom = 2.0/(max(target_radius,1)**alpha)
         self.zoom += (target_zoom - self.zoom) * 0.2
 
-        target_offset_x = target_pos[0] - (self.width / (2*PIXELS_PER_METER*self.zoom))
-        target_offset_y = target_pos[1] - (self.height / (2*PIXELS_PER_METER*self.zoom))
+        target_offset_x = target_pos[0] - (self.width / (2*config.PIXELS_PER_METER*self.zoom))
+        target_offset_y = target_pos[1] - (self.height / (2*config.PIXELS_PER_METER*self.zoom))
 
 
         self.offset[0] += (target_offset_x-self.offset[0]) *0.7
         self.offset[1] += (target_offset_y - self.offset[1])*0.7
 
     def apply(self,target_pos):
-        return [(target_pos[0] - self.offset[0])*PIXELS_PER_METER*self.zoom,
-                (target_pos[1]-self.offset[1])*PIXELS_PER_METER*self.zoom]
+        return [(target_pos[0] - self.offset[0])*config.PIXELS_PER_METER*self.zoom,
+                (target_pos[1]-self.offset[1])*config.PIXELS_PER_METER*self.zoom]
 
 
 class State:
@@ -225,7 +212,7 @@ class GameState:
 
 
     def apply_boundaries(self, dt):
-        w,h = WIDTH, HEIGHT
+        w,h = config.WIDTH, config.HEIGHT
 
         for entity in self.entities:
             if entity.pos[0] - entity.radius < 0:
@@ -257,10 +244,13 @@ class GameState:
         damping = 0.5
 
         distance = math.sqrt(dx**2 + dy**2)
+
+        nx = dx / (distance + 1e-6)
+        ny = dy / (distance + 1e-6)
         if distance > 0:
 
-            force_x = min(MAX_ACCELERATION, abs(dx * spring))
-            force_y = min(MAX_ACCELERATION, abs(dy * spring))
+            force_x = min(config.MAX_ACCELERATION, abs(nx * spring))
+            force_y = min(config.MAX_ACCELERATION, abs(ny * spring))
             if dx < 0:
                 force_x = -force_x
             if dy < 0:
@@ -314,11 +304,11 @@ class GameState:
                     total_force_x += force * nx
                     total_force_y += force * ny
             
-            speed_mult = (MAX_RADIUS / max(a.radius, 1)) * 0.5
+            speed_mult = (config.MAX_RADIUS / max(a.radius, 1)) * 0.5
             speed_mult = max(0.1, min(2.0, speed_mult))
 
-            a.force[0] += total_force_x * ACCELERATION * speed_mult * mobility(a)
-            a.force[1] += total_force_y * ACCELERATION * speed_mult * mobility(a)
+            a.force[0] += total_force_x * config.ACCELERATION * speed_mult * mobility(a)
+            a.force[1] += total_force_y * config.ACCELERATION * speed_mult * mobility(a)
 
 
 
@@ -336,8 +326,8 @@ class GameState:
 
         for entity in self.entities:
 
-            entity.velocity[0] *= (1 - FRICTION*dt)
-            entity.velocity[1] *= (1 - FRICTION*dt)
+            entity.velocity[0] *= (1 - config.FRICTION*dt)
+            entity.velocity[1] *= (1 - config.FRICTION*dt)
 
             entity.pos[0] += entity.velocity[0] * dt
             entity.pos[1] += entity.velocity[1] * dt
@@ -357,9 +347,9 @@ balls = [
 ]
 balls+=[Ball(
     color = random.choice([Colors.RED, Colors.BLUE]),
-    pos = [random.uniform(0, WIDTH), random.uniform(0, HEIGHT)],
-    radius = random.randint(5,MAX_RADIUS), 
-    mass = random.randint(5,MAX_MASS)) for _ in range(700)]
+    pos = [random.uniform(0, config.WIDTH), random.uniform(0, config.HEIGHT)],
+    radius = random.randint(5,config.MAX_RADIUS), 
+    mass = random.randint(5,config.MAX_MASS)) for _ in range(200)]
 
 entities=balls
 game_state = GameState(entities)
@@ -370,27 +360,27 @@ camera = Camera(screen.get_width(),screen.get_height())
 while running:
 
     dt = clock.tick(60) / 1000.0
-    accumulator += dt
+    ACCUMULATOR += dt
 
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
     
-    while accumulator >= FIXED_DT:
+    while ACCUMULATOR >= config.FIXED_DT:
 
         
-        game_state.update(FIXED_DT)
+        game_state.update(config.FIXED_DT)
         camera.update(game_state.entities[0].pos,game_state.entities[0].radius)
-        accumulator -= FIXED_DT
+        ACCUMULATOR -= config.FIXED_DT
 
     screen.fill(Colors.WHITE)
     draw_grid(screen,camera,screen.get_width(),screen.get_height(),20,(200,200,200))
     for ball in game_state.entities:
 
         screen_pos = camera.apply(ball.pos)
-        mass_norm = max(0, min(1, ball.mass / MAX_MASS))
-        alpha = int(MIN_ALPHA + mass_norm * (MAX_ALPHA - MIN_ALPHA))
-        draw_ball_with_alpha(screen, ball.color, screen_pos, int(ball.radius * PIXELS_PER_METER*camera.zoom), alpha)
+        mass_norm = max(0, min(1, ball.mass / config.MAX_MASS))
+        alpha = int(config.MIN_ALPHA + mass_norm * (config.MAX_ALPHA - config.MIN_ALPHA))
+        draw_ball_with_alpha(screen, ball.color, screen_pos, int(ball.radius * config.PIXELS_PER_METER*camera.zoom), alpha)
 
     pygame.display.flip() 
 
