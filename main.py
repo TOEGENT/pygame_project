@@ -113,6 +113,14 @@ while True:
             pygame.quit()
             sys.exit()
     screen.fill((255,255,255))
+    overlay_blue = pygame.Surface((config.WINDOW_WIDTH//2,config.WINDOW_HEIGHT),pygame.SRCALPHA)
+    overlay_blue.fill((0,0,255,32))
+    screen.blit(overlay_blue,(0,0))
+    overlay_red = pygame.Surface((config.WINDOW_WIDTH//2,config.WINDOW_HEIGHT),pygame.SRCALPHA)
+    overlay_red.fill((255,0,0,32))
+    screen.blit(overlay_red,(config.WINDOW_WIDTH//2,0))
+
+
     dt = clock.tick(60)/1000
     foods, balls = update(dt,foods,balls)
     for ball in balls:
@@ -120,5 +128,6 @@ while True:
 
     for food in foods:
         pygame.draw.circle(screen,food.color, food.pos,food.radius)
+
 
     pygame.display.flip()
