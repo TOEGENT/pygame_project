@@ -1,11 +1,12 @@
 import config
 import math
 class Ball:
-    def __init__(self,pos: tuple,color,mass=None):
+    def __init__(self,pos: tuple,color,mass=None,team=None):
         self.pos = pos
         self.color = color
         self.view_point=(0,0)
         self.mass=mass or config.MINIMUM_MASS
+        self.team=team or None
         self.is_alive = True
         self.lost_mass_to_spawn = 0
 
