@@ -77,12 +77,16 @@ class Game:
             if ball.lost_mass_to_spawn>=config.FOOD_MASS:
                 random_R = random.uniform(ball.radius+ball.radius*0.1,ball.radius+ball.radius*0.2)
                 random_angle = random.uniform(0,2*math.pi)
-                food_pos = (ball.pos[0]+random_R*math.cos(random_angle),ball.pos[1]+random_R*math.sin(random_angle))
+                pos_x = max(0,min(config.WINDOW_WIDTH,ball.pos[0]+random_R*math.cos(random_angle)))
+                pos_y = max(0,min(config.WINDOW_HEIGHT,ball.pos[1]+random_R*math.sin(random_angle)))
+                food_pos = (pos_x,pos_y)
+                print(food_pos)
                 self.create_food(food_pos)
 
                 ball.lost_mass_to_spawn -= config.FOOD_MASS
             ball.mass = new_mass
 
+            #food absorbtion
             x_start = int((ball.pos[0]-ball.radius)//config.MINIMUM_MASS)
             x_end = int((ball.pos[0]+ball.radius)//config.MINIMUM_MASS)
             y_start = int((ball.pos[1]-ball.radius)//config.MINIMUM_MASS)
@@ -105,14 +109,14 @@ class Game:
                                     raise TypeError
         
     
-
+            #update_ball_pos
             if ball == self.balls[0]:
                 ball.view_point = pygame.mouse.get_pos()
             else:
                 ball.view_point = ai.ai(ball)
             normal = ball.normal
             speed = ball.speed
-            new_x = ball.pos[0]+ normal[0]*speed
-            new_y = ball.pos[1] + normal[1]*speed
+            new_x = max(ball.radius,min(config.WINDOW_WIDTH-ball.radius,ball.pos[0]+ normal[0]*speed))
+            new_y = max(ball.radius,min(config.WINDOW_HEIGHT-ball.radius,ball.pos[1] + normal[1]*speed))
             ball.pos = (new_x,new_y)
         self.foods = [food for food in self.foods if not food.is_eaten]
