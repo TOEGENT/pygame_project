@@ -1,0 +1,95 @@
+import config
+import math
+from collections import defaultdict
+import pygame
+import random
+from entities import ball,food
+from ai import ai
+Ball = ball.Ball
+Food = food.Food
+
+class Game:
+    def __init__(self,time,start_mass):
+        self.time = time
+        self.start_time=0
+        self.start_mass=start_mass
+        self.blue_score=0
+        self.red_score=0
+        self.is_over=False
+
+        self.balls = [Ball((config.WINDOW_WIDTH//2,config.WINDOW_HEIGHT//2),config.COLOR_BLUE,mass=1000 )]
+        self.foods = []
+        self.food_hash = defaultdict(list)
+    def start(self):
+        for food in range(self.start_mass):
+            blue_pos = (random.uniform(0,(config.WINDOW_WIDTH//2)*0.95),random.uniform(0,config.WINDOW_HEIGHT))
+            self.create_food(blue_pos)
+            red_pos = (random.uniform((config.WINDOW_WIDTH//2)*1.05,config.WINDOW_WIDTH),random.uniform(0,config.WINDOW_HEIGHT))
+            self.create_food(red_pos)
+        self.start_time = pygame.time.get_ticks()
+
+    def create_food(self,pos):
+        new_food = Food(pos)
+        self.foods.append(new_food)
+        cell_pos = (new_food.pos[0]//config.CELL_SIZE,new_food.pos[1]//config.CELL_SIZE)
+        self.food_hash[cell_pos].append(new_food)
+        orientation = new_food.pos[0]//(config.WINDOW_WIDTH//2)
+        if orientation==config.TEAM_BLUE:
+            new_food.team=config.TEAM_BLUE
+            new_food.color = config.COLOR_GREEN
+            self.blue_score+=new_food.mass
+        elif orientation==config.TEAM_RED:
+            new_food.team=config.TEAM_RED
+            new_food.color = config.COLOR_ORANGE
+            self.red_score+=new_food.mass
+        else:
+            raise TypeError
+        
+    
+    def update(self,dt):
+        
+        for ball in self.balls:
+            new_mass = config.MINIMUM_MASS + (ball.mass-config.MINIMUM_MASS)*(0.99)**dt
+            ball.lost_mass_to_spawn += ball.mass-new_mass
+            if ball.lost_mass_to_spawn>=config.FOOD_MASS:
+                random_R = random.uniform(ball.radius+ball.radius*0.1,ball.radius+ball.radius*0.2)
+                random_angle = random.uniform(0,2*math.pi)
+                food_pos = (ball.pos[0]+random_R*math.cos(random_angle),ball.pos[1]+random_R*math.sin(random_angle))
+                self.create_food(food_pos)
+
+                ball.lost_mass_to_spawn -= config.FOOD_MASS
+            ball.mass = new_mass
+
+            x_start = int((ball.pos[0]-ball.radius)//config.CELL_SIZE)
+            x_end = int((ball.pos[0]+ball.radius)//config.CELL_SIZE)
+            y_start = int((ball.pos[1]-ball.radius)//config.CELL_SIZE)
+            y_end = int((ball.pos[1]+ball.radius)//config.CELL_SIZE)
+            for x_cell in range(x_start,x_end+1):
+                for y_cell in range(y_start,y_end+1):
+                    for food in self.food_hash.get((x_cell,y_cell),[]):
+                        dx = abs(food.pos[0]-ball.pos[0])
+                        dy = abs(food.pos[1]-ball.pos[1])
+                        dist = math.sqrt(dx**2+dy**2)
+                        if dist<ball.radius:
+                            if not food.is_eaten:
+                                food.is_eaten=True
+                                ball.mass+=1
+                                if food.team==config.TEAM_BLUE:
+                                    self.blue_score-=1
+                                elif food.team==config.TEAM_RED:
+                                    self.red_score-=1
+                                else:
+                                    raise TypeError
+        
+    
+
+            if ball == self.balls[0]:
+                ball.view_point = pygame.mouse.get_pos()
+            else:
+                ball.view_point = ai(ball)
+            normal = ball.normal
+            speed = ball.speed
+            new_x = ball.pos[0]+ normal[0]*speed
+            new_y = ball.pos[1] + normal[1]*speed
+            ball.pos = (new_x,new_y)
+        self.foods = [food for food in self.foods if not food.is_eaten]
