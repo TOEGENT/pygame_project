@@ -17,7 +17,7 @@ clock = pygame.time.Clock()
 blue_font = pygame.font.Font(None,size=30)
 red_font = pygame.font.Font(None,size=30)
 
-game = Game(10*1000,start_mass=500)
+game = Game(10*1000,start_mass=5000)
 game.start()
 while True:
 
