@@ -7,7 +7,7 @@ from entities import ball,food
 from ai import ai
 Ball = ball.Ball
 Food = food.Food
-
+print(Ball)
 class Game:
     def __init__(self,time,start_mass):
         self.time = time
@@ -17,7 +17,7 @@ class Game:
         self.red_score=0
         self.is_over=False
 
-        self.balls = [Ball((config.WINDOW_WIDTH//2,config.WINDOW_HEIGHT//2),config.COLOR_BLUE,mass=1000 )]
+        self.balls = []
         self.foods = []
         self.food_hash = defaultdict(list)
     def start(self):
@@ -28,10 +28,30 @@ class Game:
             self.create_food(red_pos)
         self.start_time = pygame.time.get_ticks()
 
+    def make_balls(self,cell_pos):
+        orange_food = [food for food in self.food_hash[cell_pos] if food.team==config.TEAM_RED]
+        green_food = [food for food in self.food_hash[cell_pos] if food.team==config.TEAM_BLUE]
+        for i in range(len(green_food)//config.MINIMUM_MASS):
+            self.balls.append(Ball(pos=(cell_pos[0]*config.MINIMUM_MASS,cell_pos[1]*config.MINIMUM_MASS),
+                color = config.COLOR_BLUE,
+                team = config.TEAM_BLUE))
+            for j in range(config.MINIMUM_MASS):
+                green_food[j].is_eaten=True
+                self.blue_score-=1
+        for i in range(len(orange_food)//config.MINIMUM_MASS):
+            self.balls.append(Ball(pos=(cell_pos[0]*config.MINIMUM_MASS,cell_pos[1]*config.MINIMUM_MASS),
+                color = config.COLOR_RED,
+                team = config.TEAM_RED))
+            for j in range(config.MINIMUM_MASS):
+                orange_food[j].is_eaten=True
+                self.red_score-=1
+        self.food_hash[cell_pos] = [food for food in self.food_hash[cell_pos] if not food.is_eaten]
+        self.foods = [food for food in self.foods if not food.is_eaten]
+
     def create_food(self,pos):
         new_food = Food(pos)
         self.foods.append(new_food)
-        cell_pos = (new_food.pos[0]//config.CELL_SIZE,new_food.pos[1]//config.CELL_SIZE)
+        cell_pos = (new_food.pos[0]//config.MINIMUM_MASS,new_food.pos[1]//config.MINIMUM_MASS)
         self.food_hash[cell_pos].append(new_food)
         orientation = new_food.pos[0]//(config.WINDOW_WIDTH//2)
         if orientation==config.TEAM_BLUE:
@@ -44,7 +64,10 @@ class Game:
             self.red_score+=new_food.mass
         else:
             raise TypeError
-        
+        if len(self.food_hash[cell_pos])>=5:
+            self.make_balls(cell_pos)
+
+
     
     def update(self,dt):
         
@@ -60,10 +83,10 @@ class Game:
                 ball.lost_mass_to_spawn -= config.FOOD_MASS
             ball.mass = new_mass
 
-            x_start = int((ball.pos[0]-ball.radius)//config.CELL_SIZE)
-            x_end = int((ball.pos[0]+ball.radius)//config.CELL_SIZE)
-            y_start = int((ball.pos[1]-ball.radius)//config.CELL_SIZE)
-            y_end = int((ball.pos[1]+ball.radius)//config.CELL_SIZE)
+            x_start = int((ball.pos[0]-ball.radius)//config.MINIMUM_MASS)
+            x_end = int((ball.pos[0]+ball.radius)//config.MINIMUM_MASS)
+            y_start = int((ball.pos[1]-ball.radius)//config.MINIMUM_MASS)
+            y_end = int((ball.pos[1]+ball.radius)//config.MINIMUM_MASS)
             for x_cell in range(x_start,x_end+1):
                 for y_cell in range(y_start,y_end+1):
                     for food in self.food_hash.get((x_cell,y_cell),[]):
@@ -86,7 +109,7 @@ class Game:
             if ball == self.balls[0]:
                 ball.view_point = pygame.mouse.get_pos()
             else:
-                ball.view_point = ai(ball)
+                ball.view_point = ai.ai(ball)
             normal = ball.normal
             speed = ball.speed
             new_x = ball.pos[0]+ normal[0]*speed
