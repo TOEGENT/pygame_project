@@ -11,7 +11,43 @@ pygame.display.set_caption("Agar.io")
 
 clock = pygame.time.Clock()
 
-food_hash = defaultdict(list)
+
+class Game:
+    def __init__(self,time,start_mass):
+        self.time = time
+        self.start_time=0
+        self.start_mass=start_mass
+        self.blue_score=0
+        self.red_score=0
+        self.is_over=False
+
+        self.balls = [Ball((screen.get_width()//2, screen.get_height()//2),config.COLOR_BLUE,mass=1000 )]
+        self.foods = []
+        self.food_hash = defaultdict(list)
+    def start(self):
+        for food in range(self.start_mass):
+            blue_pos = (random.uniform(0,(config.WINDOW_WIDTH//2)*0.95),random.uniform(0,config.WINDOW_HEIGHT))
+            self.create_food(blue_pos)
+            red_pos = (random.uniform((config.WINDOW_WIDTH//2)*1.05,config.WINDOW_WIDTH),random.uniform(0,config.WINDOW_HEIGHT))
+            self.create_food(red_pos)
+        self.start_time = pygame.time.get_ticks()
+
+    def create_food(self,pos):
+        new_food = Food(pos)
+        self.foods.append(new_food)
+        cell_pos = (new_food.pos[0]//config.CELL_SIZE,new_food.pos[1]//config.CELL_SIZE)
+        self.food_hash[cell_pos].append(new_food)
+        orientation = new_food.pos[0]//(config.WINDOW_WIDTH//2)
+        if orientation==config.TEAM_BLUE:
+            new_food.team=config.TEAM_BLUE
+            new_food.color = config.COLOR_GREEN
+            game.blue_score+=new_food.mass
+        elif orientation==config.TEAM_RED:
+            new_food.team=config.TEAM_RED
+            new_food.color = config.COLOR_ORANGE
+            game.red_score+=new_food.mass
+        else:
+            raise TypeError
 class Ball:
     def __init__(self,pos: tuple,color,mass=None):
         self.pos = pos
@@ -43,20 +79,18 @@ class Food:
         self.pos = pos
         self.mass = 1
         self.is_eaten = False
-        self.color = config.COLOR_GREEN
-    
+        self.team = None
+        self.color = None
     @property
     def radius(self):
         return math.sqrt(self.mass)
+    
 
 
-balls = [Ball((screen.get_width()//2, screen.get_height()//2),config.COLOR_BLUE,mass=1000 )]
+game = Game(10*1000,start_mass=500)
 
-foods = [Food((random.randint(0, screen.get_width()), random.randint(0,screen.get_height()))) for i in range(100)]
-for food in foods:
-    cell_pos = (food.pos[0]//config.CELL_SIZE,food.pos[1]//config.CELL_SIZE)
 
-    food_hash[cell_pos].append(food)
+
 
 def ai(ball:Ball):
     return (0,0)
@@ -70,10 +104,8 @@ def update(dt,foods,balls):
             random_R = random.uniform(ball.radius+ball.radius*0.1,ball.radius+ball.radius*0.2)
             random_angle = random.uniform(0,2*math.pi)
             food_pos = (ball.pos[0]+random_R*math.cos(random_angle),ball.pos[1]+random_R*math.sin(random_angle))
-            new_food = Food(food_pos)
-            foods.append(new_food)
-            cell_pos = (new_food.pos[0]//config.CELL_SIZE,new_food.pos[1]//config.CELL_SIZE)
-            food_hash[cell_pos].append(new_food)
+            game.create_food(food_pos)
+
             ball.lost_mass_to_spawn -= config.FOOD_MASS
         ball.mass = new_mass
         x_start = int((ball.pos[0]-ball.radius)//config.CELL_SIZE)
@@ -82,7 +114,7 @@ def update(dt,foods,balls):
         y_end = int((ball.pos[1]+ball.radius)//config.CELL_SIZE)
         for x_cell in range(x_start,x_end+1):
             for y_cell in range(y_start,y_end+1):
-                for food in food_hash.get((x_cell,y_cell),[]):
+                for food in game.food_hash.get((x_cell,y_cell),[]):
                     dx = abs(food.pos[0]-ball.pos[0])
                     dy = abs(food.pos[1]-ball.pos[1])
                     dist = math.sqrt(dx**2+dy**2)
@@ -90,6 +122,12 @@ def update(dt,foods,balls):
                         if not food.is_eaten:
                             food.is_eaten=True
                             ball.mass+=1
+                            if food.team==config.TEAM_BLUE:
+                                game.blue_score-=1
+                            elif food.team==config.TEAM_RED:
+                                game.red_score-=1
+                            else:
+                                raise TypeError
       
  
 
@@ -105,28 +143,42 @@ def update(dt,foods,balls):
     foods = [food for food in foods if not food.is_eaten]
     balls = balls
     return foods,balls
-    
+
+
+
+
+blue_font = pygame.font.Font(None,size=30)
+red_font = pygame.font.Font(None,size=30)
+
+game.start()
 while True:
 
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             pygame.quit()
             sys.exit()
+
     screen.fill((255,255,255))
+
+    red_points_text = red_font.render(str(game.red_score),True,config.COLOR_RED)
+    blue_points_text = blue_font.render(str(game.blue_score),True,config.COLOR_BLUE)
+
     overlay_blue = pygame.Surface((config.WINDOW_WIDTH//2,config.WINDOW_HEIGHT),pygame.SRCALPHA)
     overlay_blue.fill((0,0,255,32))
-    screen.blit(overlay_blue,(0,0))
     overlay_red = pygame.Surface((config.WINDOW_WIDTH//2,config.WINDOW_HEIGHT),pygame.SRCALPHA)
     overlay_red.fill((255,0,0,32))
-    screen.blit(overlay_red,(config.WINDOW_WIDTH//2,0))
 
+    screen.blit(overlay_red,(config.WINDOW_WIDTH//2,0))
+    screen.blit(overlay_blue,(0,0))
+    screen.blit(blue_points_text,(config.WINDOW_WIDTH//2-40,15))
+    screen.blit(red_points_text,(config.WINDOW_WIDTH//2+7,15))
 
     dt = clock.tick(60)/1000
-    foods, balls = update(dt,foods,balls)
-    for ball in balls:
+    game.foods, game.balls = update(dt,game.foods,game.balls)
+    for ball in game.balls:
         pygame.draw.circle(screen,ball.color, ball.pos,ball.radius)
 
-    for food in foods:
+    for food in game.foods:
         pygame.draw.circle(screen,food.color, food.pos,food.radius)
 
 
