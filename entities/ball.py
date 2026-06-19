@@ -9,6 +9,8 @@ class Ball:
         self.team=team or None
         self.is_alive = True
         self.lost_mass_to_spawn = 0
+        self.is_eaten_by=set()
+
 
     @property
     def radius(self):
@@ -26,3 +28,4 @@ class Ball:
         if distance==0:
             return (0,0)
         return (dx/distance,dy/distance)
+    
