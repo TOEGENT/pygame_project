@@ -10,12 +10,19 @@ class Ball:
         self.is_alive = True
         self.lost_mass_to_spawn = 0
         self.is_eaten_by=set()
+        self.eats=set()
+        self.old_mass=self.mass
+        self.old_pos = self.pos
 
 
     @property
     def radius(self):
         return math.sqrt(self.mass)
     
+    @property
+    def old_radius(self):
+        return math.sqrt(self.old_mass)
+
     @property
     def speed(self):
         return math.sqrt(self.radius)/self.radius
