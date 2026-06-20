@@ -15,11 +15,12 @@ class Game:
         self.blue_score=0
         self.red_score=0
         self.is_over=False
+        self.player_ball = None
 
-        self.balls = []
+        self.balls = set()
         self.balls_hash = defaultdict(list)
 
-        self.foods = []
+        self.foods = set()
         self.food_hash = defaultdict(list)
 
     def start(self):
@@ -38,36 +39,67 @@ class Game:
             if ball not in self.balls_hash[cell_pos]:
                 self.balls_hash[cell_pos].append(ball)
 
+    def _add_ball(self, ball):
+        self.balls.add(ball)
+        if self.player_ball is None:
+            self.player_ball = ball
+        self._register_ball_in_hash(ball)
+
+ 
+
+    def _remove_ball(self, ball):
+        for cell_pos in self.get_ball_cells(ball.pos, ball.radius):
+            if ball in self.balls_hash[cell_pos]:
+                self.balls_hash[cell_pos].remove(ball)
+            if not self.balls_hash[cell_pos]:
+                del self.balls_hash[cell_pos]
+        self.balls.discard(ball)
+        for i in range(config.DEATH_MASS):
+             self.create_food(ball.pos)
+
+
+
+    def _remove_food(self, food, cell_pos=None):
+        if cell_pos is None:
+            cell_pos = self._cell_pos(food.pos)
+        if food in self.food_hash[cell_pos]:
+            self.food_hash[cell_pos].remove(food)
+        if not self.food_hash[cell_pos]:
+            del self.food_hash[cell_pos]
+        self.foods.discard(food)
+        if food.team==config.TEAM_BLUE:
+            self.blue_score-=1
+        elif food.team == config.TEAM_RED:
+            self.red_score-=1
+        else:
+            raise TypeError
+
     def make_balls(self,cell_pos):
-        orange_food = [food for food in self.food_hash[cell_pos] if food.team==config.TEAM_RED]
+
         green_food = [food for food in self.food_hash[cell_pos] if food.team==config.TEAM_BLUE]
+        orange_food = [food for food in self.food_hash[cell_pos] if food.team==config.TEAM_RED]
         blue_balls_num = len(green_food)//config.MINIMUM_MASS
         balls_pos = (cell_pos[0]*config.MINIMUM_MASS,cell_pos[1]*config.MINIMUM_MASS)
         for i in range(blue_balls_num):
             new_ball=Ball(balls_pos,config.COLOR_BLUE,team=config.TEAM_BLUE)
-            self.balls.append(new_ball)
-            self._register_ball_in_hash(new_ball)
+            self._add_ball(new_ball)
         for i in range(blue_balls_num*config.MINIMUM_MASS):
-            green_food[i].is_alive=False
+            self._remove_food(green_food[i], cell_pos)
         red_balls_num = len(orange_food)//config.MINIMUM_MASS
         for i in range(red_balls_num):
             new_ball = Ball(balls_pos,config.COLOR_RED,team=config.COLOR_RED)
-            self.balls.append(new_ball)
-            self._register_ball_in_hash(new_ball)
+            self._add_ball(new_ball)
 
         for i in range(red_balls_num*config.MINIMUM_MASS):
-            orange_food[i].is_alive=False
-
-        self.food_hash[cell_pos]=orange_food+green_food
+            self._remove_food(orange_food[i], cell_pos)
 
     def create_food(self,pos):
         new_food = Food(pos)
-        self.foods.append(new_food)
+        self.foods.add(new_food)
         cell_pos = self._cell_pos(new_food.pos)
         self.food_hash[cell_pos].append(new_food)
         orientation = new_food.pos[0]//(config.WINDOW_WIDTH//2)
         if orientation==config.TEAM_BLUE:
-            
             new_food.team=config.TEAM_BLUE
             new_food.color = config.COLOR_GREEN
             self.blue_score+=new_food.mass
@@ -77,7 +109,7 @@ class Game:
             self.red_score+=new_food.mass
         else:
             raise TypeError
-        if len(self.food_hash[cell_pos])>=5:
+        if len(self.food_hash[cell_pos])>=config.MINIMUM_MASS:
             self.make_balls(cell_pos)
         
     def update_interseptions(self,ball,neighbours):
@@ -89,7 +121,6 @@ class Game:
 
             dx = neighbour.pos[0]-ball.pos[0]
             dy = neighbour.pos[1]-ball.pos[1]
-
             if ball.radius>neighbour.radius:
                 predator = ball
                 victum = neighbour
@@ -104,6 +135,8 @@ class Game:
                 continue
             
             if predator.radius*predator.radius>dx*dx+dy*dy:
+                if isinstance(victum, Food) and victum.is_eaten_by:
+                    continue
                 victum.is_eaten_by.add(predator)
                 if isinstance(victum,Food):
                     predator.eats.add(victum)
@@ -146,7 +179,7 @@ class Game:
     def update_delta_mass_to_food(self,ball):
         if ball.old_mass>ball.mass:
             ball.lost_mass_to_spawn+=ball.old_mass-ball.mass
-        while ball.lost_mass_to_spawn>=config.MINIMUM_MASS:
+        while round(ball.lost_mass_to_spawn,2)>=config.FOOD_MASS:
             random_R = random.uniform(ball.radius+ball.radius*0.1,ball.radius+ball.radius*0.2)
             random_angle = random.uniform(0,2*math.pi)
             pos_x = max(0,min(config.WINDOW_WIDTH,ball.pos[0]+random_R*math.cos(random_angle)))
@@ -165,20 +198,20 @@ class Game:
                 if predator.radius>ball.radius: # пофиксить (радиусы должны быть были разные к этому моменту)
                     factor+=1/(predator.radius-ball.radius)
 
-            new_mass = config.MINIMUM_MASS+(ball.mass-config.MINIMUM_MASS)*0.99**(factor)
+            new_mass = config.DEATH_MASS+(ball.mass-config.DEATH_MASS)*0.99**(factor)
 
         else:
-            new_mass = config.MINIMUM_MASS+(ball.mass-config.MINIMUM_MASS)*0.99**(dt)
+            new_mass = config.DEATH_MASS+(ball.mass-config.DEATH_MASS)*0.99**(30*dt)
         ball.mass = new_mass
 
         ball.eats.clear()
 
-    def update_ball_pos(self,ball):
+    def update_ball_pos(self,ball,neighbours):
         ball.old_pos = (ball.pos[0],ball.pos[1])
-        if ball == self.balls[0]:
+        if ball is self.player_ball:
                 ball.view_point = pygame.mouse.get_pos()
         else:
-            ball.view_point = ai.ai(ball)
+            ball.view_point = ai.ai(ball,neighbours)
         normal = ball.normal
         speed = ball.speed
         new_x = max(ball.radius,min(config.WINDOW_WIDTH-ball.radius,ball.pos[0]+ normal[0]*speed))
@@ -189,24 +222,15 @@ class Game:
         self.update_interseptions(ball,neighbours)
         self.update_ball_mass(ball,dt)
         self.update_delta_mass_to_food(ball)
-        if ball.mass<=config.MINIMUM_MASS:
-            for i in range(config.MINIMUM_MASS):
-                self.create_food(ball.pos)
-            ball.is_alive=False
+        if round(ball.mass,2)<=config.DEATH_MASS:
+            self._remove_ball(ball)
         else:
-            self.update_ball_pos(ball)
+            self.update_ball_pos(ball,neighbours)
         
     def update_food_status(self,food):
-        if food.is_eaten_by and food.is_alive:
-            consumer = next(iter(food.is_eaten_by))
-            consumer.eats.add(food)
-            food.is_alive=False
-            if food.team==config.TEAM_BLUE:
-                self.blue_score-=food.mass
-            elif food.team==config.TEAM_RED:
-                self.red_score-=food.mass
-            else:
-                raise TypeError
+        if food.is_eaten_by:
+
+            self._remove_food(food)
 
     def get_neighbours(self,cell_poses):
         neighbours = set()
@@ -214,28 +238,13 @@ class Game:
             neighbours.update(self.balls_hash[cell_pos])
             neighbours.update(self.food_hash[cell_pos])
         return list(neighbours)
-    def existion_update(self, balls,foods):
-        for ball in balls:
-            if not(ball.is_alive):
-                ball_cells = self.get_ball_cells(ball.pos,ball.radius)
-                for cell_pos in ball_cells:
-                    self.balls_hash[cell_pos].remove(ball)
-                self.balls.remove(ball)
-        for food in foods:
-            if not(food.is_alive):
-                cell_pos = self._cell_pos(food.pos)
-                self.food_hash[cell_pos].remove(food)
-                self.foods.remove(food)
-
 
     def update(self,dt):
-        for ball in self.balls:
+        for ball in list(self.balls):
             current_ball_grid_cells = self.update_hash(ball,ball.old_pos,ball.old_radius)
-
             neighbours = self.get_neighbours(current_ball_grid_cells)
+
             self.update_ball_status(ball,neighbours,dt)
-        for food in self.foods:
+        for food in list(self.foods):
             self.update_food_status(food)
         
-        self.existion_update(self.balls,self.foods)
-
