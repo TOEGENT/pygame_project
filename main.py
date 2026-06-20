@@ -5,7 +5,7 @@ import sys
 import math
 import random
 from collections import defaultdict
-
+from entities import ball
 from game import game
 Game = game.Game
 
@@ -18,6 +18,14 @@ blue_font = pygame.font.Font(None,size=30)
 red_font = pygame.font.Font(None,size=30)
 
 game = Game(10*1000)
+
+
+#ball1 = ball.Ball((0,0),config.COLOR_BLUE,500,config.TEAM_BLUE)
+#game._add_ball(ball1)
+#ball2 = ball.Ball((100,100),config.COLOR_RED,100,config.TEAM_RED)
+#game._add_ball(ball2)
+
+
 game.start()
 while True:
 
