@@ -98,12 +98,13 @@ class Game:
         self.foods.add(new_food)
         cell_pos = self._cell_pos(new_food.pos)
         self.food_hash[cell_pos].append(new_food)
-        orientation = new_food.pos[0]//(config.WINDOW_WIDTH//2)
-        if orientation==config.TEAM_BLUE:
+       
+        half = config.WINDOW_WIDTH/2
+        if new_food.pos[0]<half:
             new_food.team=config.TEAM_BLUE
             new_food.color = config.COLOR_GREEN
             self.blue_score+=new_food.mass
-        elif orientation==config.TEAM_RED:
+        elif new_food.pos[0]>half:
             new_food.team=config.TEAM_RED
             new_food.color = config.COLOR_ORANGE
             self.red_score+=new_food.mass
@@ -201,12 +202,14 @@ class Game:
             new_mass = config.DEATH_MASS+(ball.mass-config.DEATH_MASS)*0.99**(factor)
 
         else:
-            new_mass = config.DEATH_MASS+(ball.mass-config.DEATH_MASS)*0.99**(30*dt)
+            new_mass = config.DEATH_MASS+(ball.mass-config.DEATH_MASS)*0.99**(dt)
         ball.mass = new_mass
 
         ball.eats.clear()
 
-    def update_ball_pos(self,ball,neighbours):
+    def update_ball_pos(self,ball):
+        cell_poses = self.get_ball_cells(ball.pos,ball.radius*3)
+        neighbours = self.get_neighbours(cell_poses)
         ball.old_pos = (ball.pos[0],ball.pos[1])
         if ball is self.player_ball:
                 ball.view_point = pygame.mouse.get_pos()
@@ -225,7 +228,7 @@ class Game:
         if round(ball.mass,2)<=config.DEATH_MASS:
             self._remove_ball(ball)
         else:
-            self.update_ball_pos(ball,neighbours)
+            self.update_ball_pos(ball)
         
     def update_food_status(self,food):
         if food.is_eaten_by:
