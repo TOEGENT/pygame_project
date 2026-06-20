@@ -49,8 +49,6 @@ class Game:
             self._register_ball_in_hash(new_ball)
         for i in range(blue_balls_num*config.MINIMUM_MASS):
             green_food[i].is_alive=False
-        self.blue_score-=blue_balls_num*config.MINIMUM_MASS
-
         red_balls_num = len(orange_food)//config.MINIMUM_MASS
         for i in range(red_balls_num):
             new_ball = Ball(balls_pos,config.COLOR_RED,team=config.COLOR_RED)
@@ -59,7 +57,6 @@ class Game:
 
         for i in range(red_balls_num*config.MINIMUM_MASS):
             orange_food[i].is_alive=False
-        self.red_score-=red_balls_num*config.MINIMUM_MASS
 
         self.food_hash[cell_pos]=orange_food+green_food
 
@@ -70,6 +67,7 @@ class Game:
         self.food_hash[cell_pos].append(new_food)
         orientation = new_food.pos[0]//(config.WINDOW_WIDTH//2)
         if orientation==config.TEAM_BLUE:
+            
             new_food.team=config.TEAM_BLUE
             new_food.color = config.COLOR_GREEN
             self.blue_score+=new_food.mass
@@ -104,7 +102,7 @@ class Game:
                 ball.is_eaten_by.discard(neighbour)
                 neighbour.is_eaten_by.discard(ball)
                 continue
-
+            
             if predator.radius*predator.radius>dx*dx+dy*dy:
                 victum.is_eaten_by.add(predator)
                 if isinstance(victum,Food):
@@ -146,7 +144,8 @@ class Game:
         return cell_pos_current
                     
     def update_delta_mass_to_food(self,ball):
-        ball.lost_mass_to_spawn+=ball.old_mass-ball.mass               
+        if ball.old_mass>ball.mass:
+            ball.lost_mass_to_spawn+=ball.old_mass-ball.mass
         while ball.lost_mass_to_spawn>=config.MINIMUM_MASS:
             random_R = random.uniform(ball.radius+ball.radius*0.1,ball.radius+ball.radius*0.2)
             random_angle = random.uniform(0,2*math.pi)
@@ -158,16 +157,20 @@ class Game:
     
     def update_ball_mass(self,ball,dt):
         ball.old_mass=ball.mass
-
-        factor = 1
-        for predator in ball.is_eaten_by:
-            factor+=1/(predator.radius-ball.radius)
         for food in ball.eats:
             ball.mass+=food.mass
-        if factor>100:
-            print(factor)
-        new_mass = config.MINIMUM_MASS+(ball.mass-config.MINIMUM_MASS)*0.99**(dt+factor)
+        if ball.is_eaten_by:
+            factor = 1
+            for predator in ball.is_eaten_by:
+                if predator.radius>ball.radius: # пофиксить (радиусы должны быть были разные к этому моменту)
+                    factor+=1/(predator.radius-ball.radius)
+
+            new_mass = config.MINIMUM_MASS+(ball.mass-config.MINIMUM_MASS)*0.99**(factor)
+
+        else:
+            new_mass = config.MINIMUM_MASS+(ball.mass-config.MINIMUM_MASS)*0.99**(dt)
         ball.mass = new_mass
+
         ball.eats.clear()
 
     def update_ball_pos(self,ball):
@@ -194,10 +197,16 @@ class Game:
             self.update_ball_pos(ball)
         
     def update_food_status(self,food):
-        if food.is_eaten_by:
+        if food.is_eaten_by and food.is_alive:
             consumer = next(iter(food.is_eaten_by))
             consumer.eats.add(food)
             food.is_alive=False
+            if food.team==config.TEAM_BLUE:
+                self.blue_score-=food.mass
+            elif food.team==config.TEAM_RED:
+                self.red_score-=food.mass
+            else:
+                raise TypeError
 
     def get_neighbours(self,cell_poses):
         neighbours = set()
