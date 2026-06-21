@@ -7,7 +7,6 @@ class Food:
         self.team = None
         self.color = None
         self.is_eaten_by = set()
-        self.is_alive=True
     @property
     def radius(self):
         return math.sqrt(self.mass)
