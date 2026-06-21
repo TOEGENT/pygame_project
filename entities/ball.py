@@ -14,12 +14,14 @@ class Ball:
         self.is_eaten_by=set()
         self.eats=set()
         self.old_mass=self.mass
+        self.mass_before_decay = self.mass
         self.old_pos = self.pos
         self.smooth_view = self.view_point
         self.intents=[]
         self.smooth_intents=self.intents
         self.total_intent = entities.intent.Intent((0,0),None)
         self.smooth_total_intent = self.total_intent
+        self.sharing_food_factor = 1
 
             
 
