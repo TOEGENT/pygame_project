@@ -27,6 +27,8 @@ game = Game(10*1000)
 
 
 game.start()
+cool_ball = list(game.balls)[-1]
+cool_ball.color = config.COLOR_BLACK
 while True:
 
     for event in pygame.event.get():
@@ -52,9 +54,24 @@ while True:
     dt = clock.tick(60)/1000
 
     game.update(dt)
-    for ball in game.balls:
-        pygame.draw.circle(screen,ball.color, ball.pos,ball.radius)
+    balls = list(game.balls)
+    balls.sort(key=lambda b: b.radius,reverse=True)
+    for ball in balls:
 
+        pygame.draw.circle(screen,ball.color, ball.pos,ball.radius)
+        pygame.draw.circle(screen,config.COLOR_WHITE, ball.pos,ball.radius+1,1)
+
+        #pygame.draw.circle(screen,ball.color, ball.pos,ball.radius*config.BALL_VIEW_FACTOR,2)
+        for intent in ball.smooth_intents:
+            intent_pos = ball.pos[0]+intent.pos[0]*ball.speed, ball.pos[1]+intent.pos[1]*ball.speed
+            pygame.draw.line(screen,intent.color,ball.pos,intent_pos,1)
+
+        if ball.smooth_total_intent.color:
+            total_intent_pos = (ball.pos[0]+ball.smooth_total_intent.pos[0]*ball.speed,
+                         ball.pos[1]+ball.smooth_total_intent.pos[1]*ball.speed)
+            pygame.draw.line(screen,ball.smooth_total_intent.color,ball.pos,total_intent_pos,1)
+
+        
     for food in game.foods:
         pygame.draw.circle(screen,food.color, food.pos,food.radius)
 
