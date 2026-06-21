@@ -180,8 +180,8 @@ class Game:
         return cell_pos_current
                     
     def update_delta_mass_to_food(self,ball):
-        if ball.old_mass>ball.mass:
-            ball.lost_mass_to_spawn+=ball.old_mass-ball.mass
+        if ball.mass_before_decay>ball.mass:
+            ball.lost_mass_to_spawn+=ball.mass_before_decay-ball.mass
         while round(ball.lost_mass_to_spawn,2)>=config.FOOD_MASS:
             random_R = random.uniform(ball.radius+ball.radius*0.1,ball.radius+ball.radius*0.2)
             random_angle = random.uniform(0,2*math.pi)
@@ -191,23 +191,25 @@ class Game:
             self.create_food(food_pos)
             ball.lost_mass_to_spawn -= config.FOOD_MASS
     
-    def update_ball_mass(self,ball,dt):
-        ball.old_mass=ball.mass
+    def update_ball_eats(self,ball):
+        ball.old_mass = ball.mass
         for food in ball.eats:
             ball.mass+=food.mass
+        ball.eats.clear()
+    def update_ball_mass(self,ball,dt):
+        ball.mass_before_decay=ball.mass
+        factor = ball.sharing_food_factor
         if ball.is_eaten_by:
-            factor = 1
             for predator in ball.is_eaten_by:
                 if predator.radius>ball.radius: # пофиксить (радиусы должны быть были разные к этому моменту)
-                    factor+=1/(predator.radius-ball.radius)
-
-            new_mass = config.DEATH_MASS+(ball.mass-config.DEATH_MASS)*0.99**(factor)
-
+                    factor+=1+1/(predator.radius-ball.radius)
+            new_mass = config.DEATH_MASS-0.1+(ball.mass-config.DEATH_MASS-0.1)*0.99**(dt+factor)
         else:
-            new_mass = config.DEATH_MASS+(ball.mass-config.DEATH_MASS)*0.99**(dt)
+            new_mass = config.DEATH_MASS+(ball.mass-config.DEATH_MASS)*0.99**(dt+factor)
+
         ball.mass = new_mass
 
-        ball.eats.clear()
+
 
     def update_ball_pos(self,ball):
         cell_poses = self.get_ball_cells(ball.pos,ball.radius*config.BALL_VIEW_FACTOR)
@@ -226,8 +228,10 @@ class Game:
 
     def update_ball_status(self,ball,neighbours,dt):
         self.update_interseptions(ball,neighbours)
+        self.update_ball_eats(ball)
         self.update_ball_mass(ball,dt)
         self.update_delta_mass_to_food(ball)
+
         if round(ball.mass,2)<=config.DEATH_MASS:
             self._remove_ball(ball)
         else:
