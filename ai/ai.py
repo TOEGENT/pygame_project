@@ -92,7 +92,8 @@ def ai(ball:Ball.Ball,neighbours:list):
 
     #command_intent (begin)
 
-    max_intent = max(intents, key=lambda b: math.hypot(b.pos[0], b.pos[1]))    max_intent_length = math.hypot(max_intent.pos[0],max_intent.pos[1])
+    max_intent = max(intents, key=lambda b: math.hypot(b.pos[0], b.pos[1]))    
+    max_intent_length = math.hypot(max_intent.pos[0],max_intent.pos[1])
     command_factor = (1 + more_follow - more_unfollow - more_ignore)*max_intent_length
     command_intent = intent.Intent([0,0],config.COLOR_ORANGE)
     if ball.team==config.TEAM_BLUE:
