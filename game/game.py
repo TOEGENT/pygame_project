@@ -43,6 +43,8 @@ class Game:
         self.balls.add(ball)
         if self.player_ball is None:
             self.player_ball = ball
+            self.player_ball.color = config.COLOR_ORANGE
+            #pass
         self._register_ball_in_hash(ball)
 
  
@@ -87,7 +89,7 @@ class Game:
             self._remove_food(green_food[i], cell_pos)
         red_balls_num = len(orange_food)//config.MINIMUM_MASS
         for i in range(red_balls_num):
-            new_ball = Ball(balls_pos,config.COLOR_RED,team=config.COLOR_RED)
+            new_ball = Ball(balls_pos,config.COLOR_RED,team=config.TEAM_RED)
             self._add_ball(new_ball)
 
         for i in range(red_balls_num*config.MINIMUM_MASS):
@@ -208,7 +210,7 @@ class Game:
         ball.eats.clear()
 
     def update_ball_pos(self,ball):
-        cell_poses = self.get_ball_cells(ball.pos,ball.radius*3)
+        cell_poses = self.get_ball_cells(ball.pos,ball.radius*config.BALL_VIEW_FACTOR)
         neighbours = self.get_neighbours(cell_poses)
         ball.old_pos = (ball.pos[0],ball.pos[1])
         if ball is self.player_ball:
@@ -220,6 +222,7 @@ class Game:
         new_x = max(ball.radius,min(config.WINDOW_WIDTH-ball.radius,ball.pos[0]+ normal[0]*speed))
         new_y = max(ball.radius,min(config.WINDOW_HEIGHT-ball.radius,ball.pos[1] + normal[1]*speed))
         ball.pos = (new_x,new_y)
+
 
     def update_ball_status(self,ball,neighbours,dt):
         self.update_interseptions(ball,neighbours)
