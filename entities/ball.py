@@ -1,19 +1,27 @@
+from re import S
 import config
 import math
+import entities
+from utils import smooth_normal
 class Ball:
     def __init__(self,pos: tuple,color,mass=None,team=None):
         self.pos = pos
         self.color = color
         self.view_point=(0,0)
         self.mass=mass or config.MINIMUM_MASS
-        self.team=team or None
-        self.is_alive = True
+        self.team=team if team is not None else None
         self.lost_mass_to_spawn = 0
         self.is_eaten_by=set()
         self.eats=set()
         self.old_mass=self.mass
         self.old_pos = self.pos
+        self.smooth_view = self.view_point
+        self.intents=[]
+        self.smooth_intents=self.intents
+        self.total_intent = entities.intent.Intent((0,0),None)
+        self.smooth_total_intent = self.total_intent
 
+            
 
     @property
     def radius(self):
@@ -25,14 +33,16 @@ class Ball:
 
     @property
     def speed(self):
-        return math.sqrt(self.radius)/self.radius
+        return 5*math.sqrt(self.radius)/self.radius
     
+
     @property
     def normal(self):
-        dx = self.view_point[0] - self.pos[0]
-        dy = self.view_point[1] - self.pos[1]
-        distance = (dx**2 + dy**2)**0.5
-        if distance==0:
+        self.smooth_view = smooth_normal.smooth_add_pos(self.smooth_view,self.view_point)
+        dx = self.smooth_view[0]-self.pos[0]
+        dy = self.smooth_view[1]-self.pos[1]
+        dist = math.hypot(dx,dy)
+        if dist<1:
             return (0,0)
-        return (dx/distance,dy/distance)
+        return (dx/dist,dy/dist)
     
