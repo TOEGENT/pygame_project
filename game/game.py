@@ -67,8 +67,53 @@ class Game:
     def team_mass(self, team):
         return sum(b.mass for b in self.balls if b.team == team)
 
+    def _clamp_ball_pos(self, pos, radius):
+        margin = config.FOOD_DISTANCE_FACTOR
+        x = max(radius, min(config.WINDOW_WIDTH * (1 - margin) - radius, pos[0]))
+        y = max(radius, min(config.WINDOW_HEIGHT * (1 - margin) - radius, pos[1]))
+        return (x, y)
+
+    def _random_cluster_center(self, x_min, x_max):
+        margin = config.FOOD_DISTANCE_FACTOR
+        y_min = config.WINDOW_HEIGHT * margin
+        y_max = config.WINDOW_HEIGHT * (1 - margin)
+        return (
+            random.uniform(x_min, x_max),
+            random.uniform(y_min, y_max),
+        )
+
+    def _spawn_cluster_balls(self, team, color, center, mass_budget):
+        spawned = 0.0
+        while spawned + config.MINIMUM_MASS <= mass_budget + 1e-6:
+            remaining = mass_budget - spawned
+            mass = random.uniform(config.MINIMUM_MASS, remaining)
+            angle = random.uniform(0, 2 * math.pi)
+            dist = random.uniform(0, config.START_CLUSTER_RADIUS)
+            radius = math.sqrt(mass)
+            pos = self._clamp_ball_pos(
+                (center[0] + dist * math.cos(angle), center[1] + dist * math.sin(angle)),
+                radius,
+            )
+            self._add_ball(Ball(pos, color, mass, team))
+            spawned += mass
+
     def start(self):
         margin = config.FOOD_DISTANCE_FACTOR
+        half = config.WINDOW_WIDTH / 2
+        blue_center = self._random_cluster_center(
+            config.WINDOW_WIDTH * margin,
+            half * 0.9,
+        )
+        red_center = self._random_cluster_center(
+            half * 1.1,
+            config.WINDOW_WIDTH * (1 - margin),
+        )
+        self._spawn_cluster_balls(
+            config.TEAM_BLUE, config.COLOR_BLUE, blue_center, config.START_TEAM_BALL_MASS
+        )
+        self._spawn_cluster_balls(
+            config.TEAM_RED, config.COLOR_RED, red_center, config.START_TEAM_BALL_MASS
+        )
         for _ in range(self.start_mass):
             pos = (
                 random.uniform(config.WINDOW_WIDTH * margin, config.WINDOW_WIDTH * (1 - margin)),
@@ -85,6 +130,16 @@ class Game:
             if ball not in self.balls_hash[cell_pos]:
                 self.balls_hash[cell_pos].append(ball)
 
+    def _unregister_ball_from_hash(self, ball, pos=None, radius=None):
+        pos = pos if pos is not None else ball.pos
+        radius = radius if radius is not None else ball.radius
+        for cell_pos in self.get_ball_cells(pos, radius):
+            bucket = self.balls_hash.get(cell_pos)
+            if bucket and ball in bucket:
+                bucket.remove(ball)
+            if bucket is not None and not bucket:
+                del self.balls_hash[cell_pos]
+
     def _add_ball(self, ball):
         self.balls.add(ball)
         if (
@@ -93,17 +148,13 @@ class Game:
             and ball.team == config.PLAYER_TEAM
         ):
             self.player_ball = ball
-            self.player_ball.color = config.COLOR_ORANGE
+            self.player_ball.color = config.COLOR_WHITE
         self._register_ball_in_hash(ball)
 
  
 
     def _remove_ball(self, ball):
-        for cell_pos in self.get_ball_cells(ball.pos, ball.radius):
-            if ball in self.balls_hash[cell_pos]:
-                self.balls_hash[cell_pos].remove(ball)
-            if not self.balls_hash[cell_pos]:
-                del self.balls_hash[cell_pos]
+        self._unregister_ball_from_hash(ball)
         self.balls.discard(ball)
         for i in range(config.DEATH_MASS):
              self.create_food(ball.pos)
@@ -133,8 +184,10 @@ class Game:
             return
         old_radius = ball.radius
         half_mass = ball.mass / 2
+        self._unregister_ball_from_hash(ball, ball.pos, old_radius)
         ball.mass = half_mass
         ball.old_mass = half_mass
+        self._register_ball_in_hash(ball)
         dx, dy = ball.normal
         if math.hypot(dx, dy) < 1e-9:
             dx = math.cos(ball.wander_angle)
@@ -146,6 +199,31 @@ class Game:
         new_y = max(r, min(config.WINDOW_HEIGHT - r, new_y))
         new_ball = Ball((new_x, new_y), ball.color, half_mass, ball.team)
         self._add_ball(new_ball)
+
+    def try_ai_split(self, ball, neighbours, dt):
+        if self.control_mode == config.CONTROL_MODE_PLAYER and ball is self.player_ball:
+            return
+        if ball.team not in (config.TEAM_BLUE, config.TEAM_RED):
+            return
+        if ball.ai_split_cooldown > 0:
+            ball.ai_split_cooldown = max(0, ball.ai_split_cooldown - dt)
+            return
+        own_blob = self.blue_blob if ball.team == config.TEAM_BLUE else self.red_blob
+        enemy_blob = self.red_blob if ball.team == config.TEAM_BLUE else self.blue_blob
+        if own_blob is None or enemy_blob is None or enemy_blob.mass<=1.5*own_blob.mass:
+            return
+        food_count = sum(1 for n in neighbours if isinstance(n, Food))
+        if food_count < config.AI_SPLIT_MIN_FOOD:
+            return
+        splits = min(
+            config.AI_SPLIT_MAX_PER_UPDATE,
+            food_count // config.AI_SPLIT_FOOD_PER,
+        )
+        for _ in range(splits):
+            if ball not in self.balls:
+                break
+            self.split_ball(ball)
+        ball.ai_split_cooldown = config.AI_SPLIT_COOLDOWN
 
     def update_interseptions(self,ball,neighbours):
         seen = set()
@@ -203,11 +281,14 @@ class Game:
         cell_pos_new = cell_pos_current-cell_pos_old
 
         for cell_pos in cell_pos_new:
-            self.balls_hash[cell_pos].append(ball)
+            if ball not in self.balls_hash[cell_pos]:
+                self.balls_hash[cell_pos].append(ball)
         for cell_pos in cell_pos_fantom:
-            self.balls_hash[cell_pos].remove(ball)
-    
-            if not self.balls_hash[cell_pos]: del self.balls_hash[cell_pos]
+            bucket = self.balls_hash.get(cell_pos)
+            if bucket and ball in bucket:
+                bucket.remove(ball)
+            if bucket is not None and not bucket:
+                del self.balls_hash[cell_pos]
 
         return cell_pos_current
                     
@@ -231,14 +312,14 @@ class Game:
         ball.eats.clear()
     def update_ball_mass(self,ball,dt):
         ball.mass_before_decay=ball.mass
-        factor = ball.sharing_food_factor
+        factor = 0
         if ball.is_eaten_by:
             for predator in ball.is_eaten_by:
                 if predator.radius>ball.radius: # пофиксить (радиусы должны быть были разные к этому моменту)
-                    factor+=1+1/(predator.radius-ball.radius)
-            new_mass = config.DEATH_MASS-0.1+(ball.mass-config.DEATH_MASS-0.1)*0.99**(dt+factor)
+                    factor+=1+1/(0.001+predator.radius-ball.radius)
+            new_mass = config.DEATH_MASS-0.1+(ball.mass-config.DEATH_MASS-0.1)*0.95**(dt+factor)
         else:
-            new_mass = config.DEATH_MASS+(ball.mass-config.DEATH_MASS)*0.99**(dt+factor)
+            new_mass = config.DEATH_MASS+(ball.mass-config.DEATH_MASS)*0.95**(dt+factor)
 
         ball.mass = new_mass
 
@@ -248,10 +329,7 @@ class Game:
         cell_poses = self.get_ball_cells(ball.pos,ball.radius*config.BALL_VIEW_FACTOR)
         neighbours = self.get_neighbours(cell_poses)
         ball.old_pos = (ball.pos[0],ball.pos[1])
-        if self.control_mode == config.CONTROL_MODE_PLAYER and ball is self.player_ball:
-            ball.view_point = pygame.mouse.get_pos()
-        else:
-            ball.view_point = ai.ai(ball, neighbours, self)
+        ball.view_point = ai.ai(ball, neighbours, self)
         normal = ball.normal
         speed = ball.speed
         
@@ -269,6 +347,7 @@ class Game:
         if round(ball.mass,2)<=config.DEATH_MASS:
             self._remove_ball(ball)
         else:
+            self.try_ai_split(ball, neighbours, dt)
             self.update_ball_pos(ball)
         
     def update_food_status(self,food):
