@@ -2,10 +2,6 @@ import config
 import pygame
 from pygame.locals import *
 import sys
-import math
-import random
-from collections import defaultdict
-from entities import ball
 from game import game
 Game = game.Game
 
@@ -20,15 +16,18 @@ red_font = pygame.font.Font(None,size=30)
 game = Game(10*1000)
 
 
-#ball1 = ball.Ball((0,0),config.COLOR_BLUE,500,config.TEAM_BLUE)
-#game._add_ball(ball1)
-#ball2 = ball.Ball((100,100),config.COLOR_RED,100,config.TEAM_RED)
-#game._add_ball(ball2)
+"""ball1 = ball.Ball((0,0),config.COLOR_BLUE,100,config.TEAM_BLUE)
+game._add_ball(ball1)
+ball2 = ball.Ball((100,100),config.COLOR_RED,100,config.TEAM_RED)
+game._add_ball(ball2)
+ball3 = ball.Ball((200,200),config.COLOR_BLUE,100,config.TEAM_BLUE)
+game._add_ball(ball3)"""
+
 
 
 game.start()
-cool_ball = list(game.balls)[-1]
-cool_ball.color = config.COLOR_BLACK
+#cool_ball = list(game.balls)[-1]
+#cool_ball.color = config.COLOR_BLACK
 while True:
 
     for event in pygame.event.get():
@@ -54,6 +53,8 @@ while True:
     dt = clock.tick(60)/1000
 
     game.update(dt)
+    game.draw_team_blobs(screen)
+
     balls = list(game.balls)
     balls.sort(key=lambda b: b.radius,reverse=True)
     for ball in balls:
@@ -61,15 +62,15 @@ while True:
         pygame.draw.circle(screen,ball.color, ball.pos,ball.radius)
         pygame.draw.circle(screen,config.COLOR_WHITE, ball.pos,ball.radius+1,1)
 
-        #pygame.draw.circle(screen,ball.color, ball.pos,ball.radius*config.BALL_VIEW_FACTOR,2)
-       # for intent in ball.smooth_intents:
-            #intent_pos = ball.pos[0]+intent.pos[0]*ball.speed, ball.pos[1]+intent.pos[1]*ball.speed
-            #pygame.draw.line(screen,intent.color,ball.pos,intent_pos,1)
+        pygame.draw.circle(screen,ball.color, ball.pos,ball.radius*config.BALL_VIEW_FACTOR,2)
+        for intent in ball.smooth_intents:
+            intent_pos = ball.pos[0]+intent.pos[0]*ball.speed, ball.pos[1]+intent.pos[1]*ball.speed
+            pygame.draw.line(screen,intent.color,ball.pos,intent_pos,1)
 
-        #if ball.smooth_total_intent.color:
-            #total_intent_pos = (ball.pos[0]+ball.smooth_total_intent.pos[0]*ball.speed,
-                        # ball.pos[1]+ball.smooth_total_intent.pos[1]*ball.speed)
-            #pygame.draw.line(screen,ball.smooth_total_intent.color,ball.pos,total_intent_pos,1)
+        if ball.smooth_total_intent.color:
+            total_intent_pos = (ball.pos[0]+ball.smooth_total_intent.pos[0]*ball.speed,
+                        ball.pos[1]+ball.smooth_total_intent.pos[1]*ball.speed)
+            pygame.draw.line(screen,ball.smooth_total_intent.color,ball.pos,total_intent_pos,1)
 
         
     for food in game.foods:
