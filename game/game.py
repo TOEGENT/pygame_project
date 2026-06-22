@@ -96,7 +96,9 @@ class Game:
             self._remove_food(orange_food[i], cell_pos)
 
     def create_food(self,pos):
-        new_food = Food(pos)
+        pos_x = max(config.WINDOW_WIDTH*0.1,min(config.WINDOW_WIDTH*0.9,pos[0]))
+        pos_y = max(config.WINDOW_HEIGHT*0.1,min(config.WINDOW_HEIGHT*0.9,pos[1]))
+        new_food = Food((pos_x,pos_y))
         self.foods.add(new_food)
         cell_pos = self._cell_pos(new_food.pos)
         self.food_hash[cell_pos].append(new_food)
@@ -185,8 +187,9 @@ class Game:
         while round(ball.lost_mass_to_spawn,2)>=config.FOOD_MASS:
             random_R = random.uniform(ball.radius+ball.radius*0.1,ball.radius+ball.radius*0.2)
             random_angle = random.uniform(0,2*math.pi)
-            pos_x = max(0,min(config.WINDOW_WIDTH,ball.pos[0]+random_R*math.cos(random_angle)))
-            pos_y = max(0,min(config.WINDOW_HEIGHT,ball.pos[1]+random_R*math.sin(random_angle)))
+            pos_x = ball.pos[0]+random_R*math.cos(random_angle)
+            pos_y = ball.pos[1]+random_R*math.sin(random_angle)
+
             food_pos = (pos_x,pos_y)
             self.create_food(food_pos)
             ball.lost_mass_to_spawn -= config.FOOD_MASS
@@ -221,6 +224,7 @@ class Game:
             ball.view_point = ai.ai(ball,neighbours)
         normal = ball.normal
         speed = ball.speed
+        
         new_x = max(ball.radius,min(config.WINDOW_WIDTH-ball.radius,ball.pos[0]+ normal[0]*speed))
         new_y = max(ball.radius,min(config.WINDOW_HEIGHT-ball.radius,ball.pos[1] + normal[1]*speed))
         ball.pos = (new_x,new_y)
