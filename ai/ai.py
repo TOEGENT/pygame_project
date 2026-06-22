@@ -1,41 +1,14 @@
+import random
 import config
 import math
-
 from entities import food, intent, ball as Ball
+from utils.utils import *
 
 import pygame
 
 from utils.smooth_normal import smooth_add_pos
-def calc_normal(pos1,pos2):
-    dx = pos2[0]-pos1[0]
-    dy = pos2[1]-pos1[1]
-    dist = math.hypot(dx,dy)
-    if dist==0:
-        return (0,(0,0))
-    else:
-        return dist, (dx/dist,dy/dist)
-def calc_intent(ball:Ball,neighbour:Ball,more_follow,more_unfollow):
-    if ball.team!=config.TEAM_BLUE:
-        more_follow=0
-        more_unfollow=0
-    if neighbour.radius==ball.radius:
-        return 0
-    danger_factor = 0
-    ally_factor = 0
-    merge_factor = (1/(1+ neighbour.radius-ball.radius))
-    if neighbour.team!=ball.team:
-        danger_factor -= 1 + more_follow - more_unfollow
-    else:
-        if abs(neighbour.radius-ball.radius)<config.MINIMUM_MASS:
-            ally_factor += 1/10 + more_follow - more_unfollow
-    ball_factor = (danger_factor+ally_factor)*merge_factor
-    return ball_factor
 
-def calc_importance_factor(dist):
-    if dist==0:
-        return 0
-    return config.FOOD_MASS/(0.1+dist)+config.IMPORTANCE_KOEF
-def ai(ball:Ball.Ball,neighbours:list):
+def ai(ball:Ball.Ball,neighbours:list,game):
     mouse_keys = pygame.mouse.get_pressed()
     mouse_pos = pygame.mouse.get_pos()
     keyboard_keys = pygame.key.get_pressed()
@@ -43,7 +16,8 @@ def ai(ball:Ball.Ball,neighbours:list):
     more_follow = mouse_keys[0]
     more_unfollow = 2*mouse_keys[2]
     more_ignore = mouse_keys[1]
-    ball.sharing_food_factor = space
+    if ball.team==config.TEAM_BLUE:
+        ball.sharing_food_factor = space
 
     #reflex_intent (begin)
     total_reflex_intent = intent.Intent([0,0],config.COLOR_BLACK)
@@ -68,15 +42,14 @@ def ai(ball:Ball.Ball,neighbours:list):
         reflex_factor = (1+ball_factor)*(calc_importance_factor(dist))
         reflex_intent = intent.Intent((normal[0]*reflex_factor,
                         normal[1]*reflex_factor),config.COLOR_WHITE)
-        total_reflex_intent.pos[0]+=reflex_intent.pos[0] + future_reflex_intent.pos[0]
-        total_reflex_intent.pos[1]+=reflex_intent.pos[1] + future_reflex_intent.pos[1]
+        total_reflex_intent.pos[0]+=reflex_intent.pos[0] + 0.3*future_reflex_intent.pos[0]
+        total_reflex_intent.pos[1]+=reflex_intent.pos[1] + 0.3*future_reflex_intent.pos[1]
 
     #reflex_intent(end)
 
 
     #wall_intent (begin)
 
-    reflex_intent_length = math.hypot(total_reflex_intent.pos[0],total_reflex_intent.pos[1])
     wall_intent = intent.Intent([0,0],config.COLOR_WHITE)
     wall_dist_left = ball.pos[0]-ball.radius
     wall_dist_right = config.WINDOW_WIDTH-ball.pos[0]+ball.radius
@@ -84,38 +57,49 @@ def ai(ball:Ball.Ball,neighbours:list):
     wall_dist_down = config.WINDOW_HEIGHT-ball.pos[1] + ball.radius
 
 
-    if wall_dist_left<config.WINDOW_WIDTH*0.1:
+    if wall_dist_left<config.WINDOW_WIDTH*config.FOOD_DISTANCE_FACTOR:
         wall_intent.pos[0]+=calc_importance_factor(wall_dist_left)
-    if wall_dist_top<config.WINDOW_HEIGHT*0.1:
+    if wall_dist_top<config.WINDOW_HEIGHT*config.FOOD_DISTANCE_FACTOR:
         wall_intent.pos[1]+=calc_importance_factor(wall_dist_top)
-        print(calc_importance_factor(wall_dist_top),wall_dist_top)
-    if wall_dist_right<config.WINDOW_WIDTH*0.1:
+    if wall_dist_right<config.WINDOW_WIDTH*config.FOOD_DISTANCE_FACTOR:
         wall_intent.pos[0]-=calc_importance_factor(wall_dist_right)
-    if wall_dist_down<config.WINDOW_HEIGHT*0.1:
-        wall_intent.pos[1]-=calc_importance_factor(wall_dist_down)
-
-
-
-
-    intents = [total_reflex_intent,wall_intent]
-
-
-
-    max_intent = max(intents, key=lambda b: math.hypot(b.pos[0], b.pos[1]))    
-    max_intent_length = math.hypot(max_intent.pos[0],max_intent.pos[1])
-    
+    if wall_dist_down<config.WINDOW_HEIGHT*config.FOOD_DISTANCE_FACTOR:
+        wall_intent.pos[1]-=calc_importance_factor(wall_dist_down)    
     #wall_intent (end)
+    
+    #wander_intent (begin)
+    ball.wander_angle += random.uniform(-0.3,0.3)
+    wander_intent = intent.Intent([0,0],config.COLOR_WHITE)
+    wander_intent.pos[0] = math.cos(ball.wander_angle) * config.WANDER_FACTOR
+    wander_intent.pos[1] = math.sin(ball.wander_angle) * config.WANDER_FACTOR
+    #wander_intent (end)
+
+
+    intents = [total_reflex_intent,wall_intent,wander_intent]
 
 
     #command_intent (begin)
 
-    command_factor = (1 + more_follow - more_unfollow - more_ignore)*(max_intent_length+1)
+    max_intent = max(intents, key=lambda b: math.hypot(b.pos[0], b.pos[1]))    
+    max_intent_length = math.hypot(max_intent.pos[0],max_intent.pos[1])
+    command_factor = (1 + more_follow - more_unfollow - more_ignore)*(max_intent_length*1.1)
     command_intent = intent.Intent([0,0],config.COLOR_ORANGE)
+
     if ball.team==config.TEAM_BLUE:
         command_dist,command_normal = calc_normal(ball.pos,mouse_pos)
         command_intent.pos[0] += command_normal[0] * command_factor *calc_importance_factor(command_dist)
         command_intent.pos[1] += command_normal[1]*command_factor*calc_importance_factor(command_dist)
+
+    elif ball.team == config.TEAM_RED:
+        red_command_factor = max_intent_length
+        if game.red_blob is not None and game.blue_blob is not None:
+            red_command_factor += calc_intent(game.red_blob, game.blue_blob, 0, 0)
+            command_dist, command_normal = calc_normal(ball.pos, game.blue_blob.pos)
+            command_intent.pos[0] += command_normal[0] * red_command_factor * calc_importance_factor(command_dist)
+            command_intent.pos[1] += command_normal[1] * red_command_factor * calc_importance_factor(command_dist)
     #command_intent (end)
+
+
     intents.append(command_intent)
     ball.intents=intents
     total_intent= intent.Intent([0,0],config.COLOR_GREEN)
