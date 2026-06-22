@@ -1,3 +1,4 @@
+from re import escape
 import config
 import math
 from collections import defaultdict
@@ -5,8 +6,20 @@ import pygame
 import random
 from entities import ball,food
 from ai import ai
+from utils.utils import calc_mass_center
 Ball = ball.Ball
 Food = food.Food
+
+class TeamBlob:
+    def __init__(self, pos, mass, team):
+        self.pos = pos
+        self.mass = mass
+        self.team = team
+
+    @property
+    def radius(self):
+        return math.sqrt(self.mass)
+
 class Game:
     def __init__(self,time):
         self.time = time
@@ -16,23 +29,54 @@ class Game:
         self.red_score=0
         self.is_over=False
         self.player_ball = None
-
         self.balls = set()
         self.balls_hash = defaultdict(list)
 
         self.foods = set()
         self.food_hash = defaultdict(list)
 
+        self.red_blob = None
+        self.blue_blob = None
+
+    def _make_team_blob(self, team):
+        team_balls = [b for b in self.balls if b.team == team]
+        if not team_balls:
+            return None
+        center = calc_mass_center(team_balls)
+        if center is None:
+            return None
+        total_mass = sum(b.mass for b in team_balls)
+        return TeamBlob(center, total_mass, team)
+
+    def update_team_blobs(self):
+        self.red_blob = self._make_team_blob(config.TEAM_RED)
+        self.blue_blob = self._make_team_blob(config.TEAM_BLUE)
+
+    def draw_team_blobs(self, screen, fill_alpha=40, outline_alpha=140):
+        for blob in (self.red_blob, self.blue_blob):
+            if blob is None:
+                continue
+            radius = int(blob.radius)
+            if radius < 1:
+                continue
+            color = config.COLOR_BLUE if blob.team == config.TEAM_BLUE else config.COLOR_RED
+            surf = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
+            pygame.draw.circle(surf, (*color, fill_alpha), (radius, radius), radius)
+            pygame.draw.circle(surf, (*color, outline_alpha), (radius, radius), radius, 2)
+            screen.blit(surf, (blob.pos[0] - radius, blob.pos[1] - radius))
+
     def start(self):
         for food in range(self.start_mass):
-            blue_pos = (random.uniform(0,(config.WINDOW_WIDTH//2)*0.95),random.uniform(0,config.WINDOW_HEIGHT))
-            self.create_food(blue_pos)
-            red_pos = (random.uniform((config.WINDOW_WIDTH//2)*1.05,config.WINDOW_WIDTH),random.uniform(0,config.WINDOW_HEIGHT))
-            self.create_food(red_pos)
+            blue_pos = (random.uniform(config.WINDOW_WIDTH*config.FOOD_DISTANCE_FACTOR,(config.WINDOW_WIDTH//2)*0.95),
+                        random.uniform(config.WINDOW_HEIGHT*config.FOOD_DISTANCE_FACTOR,config.WINDOW_HEIGHT*(1-config.FOOD_DISTANCE_FACTOR)))
+            self.create_food(blue_pos,start=True)
+            red_pos = (random.uniform((config.WINDOW_WIDTH//2)*1.05,config.WINDOW_WIDTH*(1-config.FOOD_DISTANCE_FACTOR)),
+            random.uniform(config.WINDOW_HEIGHT*config.FOOD_DISTANCE_FACTOR,config.WINDOW_HEIGHT*(1-config.FOOD_DISTANCE_FACTOR)))
+            self.create_food(red_pos,start=True)
         self.start_time = pygame.time.get_ticks()
 
     def _cell_pos(self, pos):
-        return (int(pos[0] // config.MINIMUM_MASS), int(pos[1] // config.MINIMUM_MASS))
+        return (int(pos[0] // config.CELL_SIZE), int(pos[1] // config.CELL_SIZE))
 
     def _register_ball_in_hash(self, ball):
         for cell_pos in self.get_ball_cells(ball.pos, ball.radius):
@@ -76,28 +120,28 @@ class Game:
         else:
             raise TypeError
 
-    def make_balls(self,cell_pos):
+    def make_balls(self,cell_pos,min_mass):
 
         green_food = [food for food in self.food_hash[cell_pos] if food.team==config.TEAM_BLUE]
         orange_food = [food for food in self.food_hash[cell_pos] if food.team==config.TEAM_RED]
-        blue_balls_num = len(green_food)//config.MINIMUM_MASS
-        balls_pos = (cell_pos[0]*config.MINIMUM_MASS,cell_pos[1]*config.MINIMUM_MASS)
+        blue_balls_num = len(green_food)//min_mass
+        balls_pos = (cell_pos[0]*config.CELL_SIZE,cell_pos[1]*config.CELL_SIZE)
         for i in range(blue_balls_num):
-            new_ball=Ball(balls_pos,config.COLOR_BLUE,team=config.TEAM_BLUE)
+            new_ball=Ball(balls_pos,config.COLOR_BLUE,team=config.TEAM_BLUE,mass=min_mass)
             self._add_ball(new_ball)
-        for i in range(blue_balls_num*config.MINIMUM_MASS):
+        for i in range(blue_balls_num*min_mass):
             self._remove_food(green_food[i], cell_pos)
-        red_balls_num = len(orange_food)//config.MINIMUM_MASS
+        red_balls_num = len(orange_food)//min_mass
         for i in range(red_balls_num):
-            new_ball = Ball(balls_pos,config.COLOR_RED,team=config.TEAM_RED)
+            new_ball = Ball(balls_pos,config.COLOR_RED,team=config.TEAM_RED,mass=min_mass)
             self._add_ball(new_ball)
 
-        for i in range(red_balls_num*config.MINIMUM_MASS):
+        for i in range(red_balls_num*min_mass):
             self._remove_food(orange_food[i], cell_pos)
 
-    def create_food(self,pos):
-        pos_x = max(config.WINDOW_WIDTH*0.1,min(config.WINDOW_WIDTH*0.9,pos[0]))
-        pos_y = max(config.WINDOW_HEIGHT*0.1,min(config.WINDOW_HEIGHT*0.9,pos[1]))
+    def create_food(self,pos,start=False):
+        pos_x = max(config.WINDOW_WIDTH*config.FOOD_DISTANCE_FACTOR,min(config.WINDOW_WIDTH*(1-config.FOOD_DISTANCE_FACTOR),pos[0]))
+        pos_y = max(config.WINDOW_HEIGHT*config.FOOD_DISTANCE_FACTOR,min(config.WINDOW_HEIGHT*(1-config.FOOD_DISTANCE_FACTOR),pos[1]))
         new_food = Food((pos_x,pos_y))
         self.foods.add(new_food)
         cell_pos = self._cell_pos(new_food.pos)
@@ -114,8 +158,10 @@ class Game:
             self.red_score+=new_food.mass
         else:
             raise TypeError
-        if len(self.food_hash[cell_pos])>=config.MINIMUM_MASS:
-            self.make_balls(cell_pos)
+        mass_to_spawn = config.MINIMUM_MASS if start else config.MASS_TO_SPAWN_AFTER_START
+        if len(self.food_hash[cell_pos])>=mass_to_spawn:
+            if start:
+                self.make_balls(cell_pos,mass_to_spawn)
         
     def update_interseptions(self,ball,neighbours):
         seen = set()
@@ -153,10 +199,10 @@ class Game:
   
 
     def get_ball_cells(self,pos,radius):
-        x_start = int((pos[0]-radius)//config.MINIMUM_MASS)
-        x_end = int((pos[0]+radius)//config.MINIMUM_MASS)
-        y_start = int((pos[1]-radius)//config.MINIMUM_MASS)
-        y_end = int((pos[1]+radius)//config.MINIMUM_MASS)
+        x_start = int((pos[0]-radius)//config.CELL_SIZE)
+        x_end = int((pos[0]+radius)//config.CELL_SIZE)
+        y_start = int((pos[1]-radius)//config.CELL_SIZE)
+        y_end = int((pos[1]+radius)//config.CELL_SIZE)
         cell_pos_current = set()
         for x_cell in range(x_start,x_end+1):
             for y_cell in range(y_start,y_end+1):
@@ -221,7 +267,7 @@ class Game:
         if ball is self.player_ball:
                 ball.view_point = pygame.mouse.get_pos()
         else:
-            ball.view_point = ai.ai(ball,neighbours)
+            ball.view_point = ai.ai(ball,neighbours,self)
         normal = ball.normal
         speed = ball.speed
         
@@ -254,6 +300,7 @@ class Game:
         return list(neighbours)
 
     def update(self,dt):
+        self.update_team_blobs()
         for ball in list(self.balls):
             current_ball_grid_cells = self.update_hash(ball,ball.old_pos,ball.old_radius)
             neighbours = self.get_neighbours(current_ball_grid_cells)
@@ -261,4 +308,10 @@ class Game:
             self.update_ball_status(ball,neighbours,dt)
         for food in list(self.foods):
             self.update_food_status(food)
+        
+        mouse_pos = pygame.mouse.get_pos()
+        mouse_cells = self.get_ball_cells(mouse_pos,10)
+        if pygame.mouse.get_pressed()[2]:
+            for cell in mouse_cells:
+                self.make_balls(cell,config.MASS_TO_SPAWN_AFTER_START)
         
