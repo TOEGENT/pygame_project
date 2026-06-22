@@ -1,7 +1,5 @@
-from re import S
 import config
 import math
-import statistics
 
 from entities import food, intent, ball as Ball
 
@@ -36,7 +34,7 @@ def calc_intent(ball:Ball,neighbour:Ball,more_follow,more_unfollow):
 def calc_importance_factor(dist):
     if dist==0:
         return 0
-    return config.FOOD_MASS/(0.1*dist)+config.IMPORTANCE_KOEF
+    return config.FOOD_MASS/(0.1+dist)+config.IMPORTANCE_KOEF
 def ai(ball:Ball.Ball,neighbours:list):
     mouse_keys = pygame.mouse.get_pressed()
     mouse_pos = pygame.mouse.get_pos()
@@ -56,6 +54,7 @@ def ai(ball:Ball.Ball,neighbours:list):
             continue
 
         ball_factor=0
+        future_reflex_intent = intent.Intent((0,0),config.COLOR_GREEN)
         if isinstance(neighbour,Ball.Ball):
             
             ball_factor+=calc_intent(ball,neighbour,more_follow=more_follow,more_unfollow = more_unfollow)
@@ -63,30 +62,38 @@ def ai(ball:Ball.Ball,neighbours:list):
             neighbour_future_pos = (neighbour.pos[0]+neighbour.normal[0]*neighbour.speed,
                                         neighbour.pos[1]+neighbour.normal[1]*neighbour.speed)
             future_dist,future_normal = calc_normal(ball.pos,neighbour_future_pos)
+            reflex_future_factor = (1+ball_factor)*(calc_importance_factor(future_dist))
+            future_reflex_intent.pos = (future_normal[0]*reflex_future_factor,future_normal[1]*reflex_future_factor)
 
-        reflex_factor = (1+ball_factor)*(calc_importance_factor(dist)+0.3*calc_importance_factor(future_dist))
-        reflex_intent = (normal[0]*reflex_factor,
-                        normal[1]*reflex_factor)
-        total_reflex_intent.pos[0]+=reflex_intent[0]
-        total_reflex_intent.pos[1]+=reflex_intent[1]
+        reflex_factor = (1+ball_factor)*(calc_importance_factor(dist))
+        reflex_intent = intent.Intent((normal[0]*reflex_factor,
+                        normal[1]*reflex_factor),config.COLOR_WHITE)
+        total_reflex_intent.pos[0]+=reflex_intent.pos[0] + future_reflex_intent.pos[0]
+        total_reflex_intent.pos[1]+=reflex_intent.pos[1] + future_reflex_intent.pos[1]
+
     #reflex_intent(end)
 
-    #wall_intent (begin)
-    wall_intent = intent.Intent([0,0],config.COLOR_BLACK)
-    wall_dist_left = ball.pos[0]
-    wall_dist_right = config.WINDOW_WIDTH-ball.pos[0]
-    wall_dist_down = ball.pos[1]
-    wall_dist_top = config.WINDOW_HEIGHT-ball.pos[1]
 
-    if wall_dist_left<ball.radius*3:
-        wall_intent.pos[0]+=1/(1+wall_dist_left)**2
-    if wall_dist_down<ball.radius*3:
-        wall_intent.pos[1]+=1/(1+wall_dist_down)**2
-    if wall_dist_right<ball.radius*3:
-        wall_intent.pos[0]-=1/(1+wall_dist_right)**2
-    if wall_dist_top<ball.radius:
-        wall_intent.pos[1]-=1/(1+wall_dist_top)**2
-    #wall_intent (end)
+    #wall_intent (begin)
+
+    reflex_intent_length = math.hypot(total_reflex_intent.pos[0],total_reflex_intent.pos[1])
+    wall_intent = intent.Intent([0,0],config.COLOR_WHITE)
+    wall_dist_left = ball.pos[0]-ball.radius
+    wall_dist_right = config.WINDOW_WIDTH-ball.pos[0]+ball.radius
+    wall_dist_top = ball.pos[1] - ball.radius
+    wall_dist_down = config.WINDOW_HEIGHT-ball.pos[1] + ball.radius
+
+
+    if wall_dist_left<config.WINDOW_WIDTH*0.1:
+        wall_intent.pos[0]+=calc_importance_factor(wall_dist_left)
+    if wall_dist_top<config.WINDOW_HEIGHT*0.1:
+        wall_intent.pos[1]+=calc_importance_factor(wall_dist_top)
+        print(calc_importance_factor(wall_dist_top),wall_dist_top)
+    if wall_dist_right<config.WINDOW_WIDTH*0.1:
+        wall_intent.pos[0]-=calc_importance_factor(wall_dist_right)
+    if wall_dist_down<config.WINDOW_HEIGHT*0.1:
+        wall_intent.pos[1]-=calc_importance_factor(wall_dist_down)
+
 
 
 
@@ -94,10 +101,14 @@ def ai(ball:Ball.Ball,neighbours:list):
 
 
 
-    #command_intent (begin)
-
     max_intent = max(intents, key=lambda b: math.hypot(b.pos[0], b.pos[1]))    
     max_intent_length = math.hypot(max_intent.pos[0],max_intent.pos[1])
+    
+    #wall_intent (end)
+
+
+    #command_intent (begin)
+
     command_factor = (1 + more_follow - more_unfollow - more_ignore)*(max_intent_length+1)
     command_intent = intent.Intent([0,0],config.COLOR_ORANGE)
     if ball.team==config.TEAM_BLUE:
@@ -120,5 +131,6 @@ def ai(ball:Ball.Ball,neighbours:list):
     ball.smooth_total_intent = intent.Intent(smooth_add_pos(ball.smooth_total_intent.pos,
                                             ball.total_intent.pos),config.COLOR_RED)
     return (ball.pos[0]+ball.smooth_total_intent.pos[0],ball.pos[1]+ball.smooth_total_intent.pos[1])
+
             
 
