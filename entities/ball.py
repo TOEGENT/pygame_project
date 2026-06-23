@@ -36,7 +36,7 @@ class Ball:
 
     @property
     def speed(self):
-        return 5*math.sqrt(self.radius)/self.radius
+        return config.BALL_SPEED_FACTOR * math.sqrt(self.radius) / self.radius
     
 
     @property
