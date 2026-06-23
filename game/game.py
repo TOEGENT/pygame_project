@@ -439,9 +439,9 @@ class Game:
             for predator in ball.is_eaten_by:
                 if predator.radius>ball.radius: # пофиксить (радиусы должны быть были разные к этому моменту)
                     factor+=1+1/(0.001+predator.radius-ball.radius)
-            new_mass = config.DEATH_MASS-0.1+(ball.mass-config.DEATH_MASS-0.1)*0.95**(dt+factor)
+            new_mass = config.DEATH_MASS-0.1+(ball.mass-config.DEATH_MASS-0.1)*config.DECAY_FACTOR**(dt+factor)
         else:
-            new_mass = config.DEATH_MASS+(ball.mass-config.DEATH_MASS)*0.95**(dt+factor)
+            new_mass = config.DEATH_MASS+(ball.mass-config.DEATH_MASS)*config.DECAY_FACTOR**(dt+factor)
 
         ball.mass = new_mass
 
