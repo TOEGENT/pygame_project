@@ -74,6 +74,27 @@ def ai(ball: Ball.Ball, neighbours: list, game):
     wall_scale_y = max(ball.radius * 2.5, config.WINDOW_HEIGHT * config.WALL_DISTANCE_FACTOR)
     command_scale = max(config.WINDOW_WIDTH, config.WINDOW_HEIGHT)
 
+    tactic = "neutral"
+    mass_ratio = 1.0
+    own_blob = None
+    enemy_blob = None
+    if not player_control and ball.team in (config.TEAM_BLUE, config.TEAM_RED):
+        own_blob = game.blue_blob if ball.team == config.TEAM_BLUE else game.red_blob
+        enemy_blob = game.red_blob if ball.team == config.TEAM_BLUE else game.blue_blob
+        mass_ratio = team_mass_ratio(own_blob, enemy_blob)
+        tactic = team_tactic(mass_ratio)
+
+    ally_repulse = (
+        config.ALLY_REPULSE_K * (mass_ratio - 1)
+        if tactic == "defense"
+        else 0
+    )
+    defense_anchor = (
+        team_largest_ball(game.balls, ball.team)
+        if tactic == "defense"
+        else None
+    )
+
     #reflex_intent (begin)
     total_ball_intent = Intent([0, 0], config.COLOR_BLACK, "balls")
     total_food_intent = Intent([0, 0], config.COLOR_GREEN, "food")
@@ -103,6 +124,15 @@ def ai(ball: Ball.Ball, neighbours: list, game):
             iy = ball_intent.pos[1] + 0.3 * future_ball_intent.pos[1]
             score = abs(ball_factor_without_dist) * calc_importance_factor(dist, view_scale)
             ball_vectors.append((score, ix, iy))
+            if neighbour.team == ball.team and ally_repulse > 0:
+                if defense_anchor is not None and (
+                    ball is defense_anchor or neighbour is defense_anchor
+                ):
+                    pass
+                else:
+                    repulse = ally_repulse * calc_importance_factor(dist, view_scale)
+                    total_ball_intent.pos[0] -= normal[0] * repulse
+                    total_ball_intent.pos[1] -= normal[1] * repulse
         
         #ball_intent (end)
 
@@ -113,10 +143,10 @@ def ai(ball: Ball.Ball, neighbours: list, game):
             total_food_intent.pos[0] += normal[0] * food_factor
             total_food_intent.pos[1] += normal[1] * food_factor
 
-    if not player_control and ball.team in (config.TEAM_BLUE, config.TEAM_RED):
-        own_blob = game.blue_blob if ball.team == config.TEAM_BLUE else game.red_blob
-        enemy_blob = game.red_blob if ball.team == config.TEAM_BLUE else game.blue_blob
-
+    if tactic == "attack":
+        food_boost = 1 + config.CATCHUP_FOOD_K * (1 - mass_ratio)
+        total_food_intent.pos[0] *= food_boost
+        total_food_intent.pos[1] *= food_boost
 
     ball_vectors.sort(key=lambda item: item[0], reverse=True)
     for _, ix, iy in ball_vectors[: config.INTENT_TOP_BALLS]:
@@ -161,27 +191,27 @@ def ai(ball: Ball.Ball, neighbours: list, game):
         command_dist, command_normal = calc_normal(ball.pos, mouse_pos)
         command_intent.pos[0] += command_normal[0] * command_factor * calc_importance_factor(command_dist, command_scale,reverse=True)
         command_intent.pos[1] += command_normal[1] * command_factor * calc_importance_factor(command_dist, command_scale,reverse=True)
-    elif ball.team in (config.TEAM_BLUE, config.TEAM_RED):
-        own_blob = game.blue_blob if ball.team == config.TEAM_BLUE else game.red_blob
-        enemy_blob = game.red_blob if ball.team == config.TEAM_BLUE else game.blue_blob
-        if own_blob is not None and enemy_blob is not None:
-            gather, gather_factor = team_gather_command(own_blob, enemy_blob)
-            if gather:
-                target = own_blob.pos
-                command_factor = gather_factor
-                rally_scale = max(view_scale, own_blob.radius * 2)
+    elif ball.team in (config.TEAM_BLUE, config.TEAM_RED) and own_blob is not None and enemy_blob is not None:
+        rally_scale = max(view_scale, own_blob.radius * 2)
+        if tactic == "defense":
+            if defense_anchor is not None and ball is not defense_anchor:
+                target = orbit_target(
+                    ball.pos,
+                    defense_anchor.pos,
+                    defense_anchor.radius,
+                    orbit_factor=config.DEFENSE_ANCHOR_ORBIT_FACTOR,
+                )
+                strength = (mass_ratio - 1) * config.ORBIT_COMMAND_K
                 command_dist, command_normal = calc_normal(ball.pos, target)
-                strength = command_factor * calc_importance_factor(command_dist, rally_scale)
-            else:
-                target = enemy_blob.pos
-                command_factor = calc_intent(own_blob, enemy_blob, 0, 0)
-                command_dist, command_normal = calc_normal(ball.pos, target)
-                strength = command_factor * calc_importance_factor(command_dist, command_scale)
+                strength *= calc_importance_factor(command_dist, rally_scale)
+                command_intent.pos[0] += command_normal[0] * strength
+                command_intent.pos[1] += command_normal[1] * strength
+        elif tactic == "attack":
+            strength = (1 - mass_ratio) * config.INFILTRATE_COMMAND_K
+            command_dist, command_normal = calc_normal(ball.pos, enemy_blob.pos)
+            strength *= calc_importance_factor(command_dist, rally_scale)
             command_intent.pos[0] += command_normal[0] * strength
             command_intent.pos[1] += command_normal[1] * strength
-            if gather:
-                command_intent.pos[0] *= config.COMMAND_GATHER_INTENT_MULT
-                command_intent.pos[1] *= config.COMMAND_GATHER_INTENT_MULT
     #command_intent (end)
 
     layer_specs = [
