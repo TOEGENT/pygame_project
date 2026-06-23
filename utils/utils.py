@@ -40,12 +40,37 @@ def calc_wall_importance(wall_dist, wall_scale):
     return t * t * config.WALL_INTENT_PEAK
 
 
-def team_gather_command(own_blob, enemy_blob):
-    if own_blob is None or enemy_blob is None:
-        return False, 1.0
-    if own_blob.mass > enemy_blob.mass*1.5:
-        return True, config.COMMAND_GATHER_FACTOR
-    return False, 1.0
+def team_mass_ratio(own_blob, enemy_blob):
+    if own_blob is None or enemy_blob is None or enemy_blob.mass <= 0:
+        return 1.0
+    return own_blob.mass / enemy_blob.mass
+
+def team_tactic(mass_ratio):
+    if mass_ratio >= config.DEFENSE_MASS_RATIO:
+        return "defense"
+    if mass_ratio <= config.ATTACK_MASS_RATIO:
+        return "attack"
+    return "neutral"
+
+def team_largest_ball(balls, team):
+    team_balls = [b for b in balls if b.team == team]
+    if not team_balls:
+        return None
+    return max(team_balls, key=lambda b: b.mass)
+
+def orbit_target(ball_pos, blob_pos, blob_radius, orbit_factor=None):
+    dx = ball_pos[0] - blob_pos[0]
+    dy = ball_pos[1] - blob_pos[1]
+    dist = math.hypot(dx, dy)
+    orbit_r = blob_radius * (orbit_factor if orbit_factor is not None else config.ORBIT_RADIUS_FACTOR)
+    if dist < 1e-9:
+        angle = 0.0
+    else:
+        angle = math.atan2(dy, dx)
+    return (
+        blob_pos[0] + math.cos(angle) * orbit_r,
+        blob_pos[1] + math.sin(angle) * orbit_r,
+    )
 
 def calc_mass_center(balls):
     total_mass = sum(b.mass for b in balls)
