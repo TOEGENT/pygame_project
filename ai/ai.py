@@ -5,7 +5,7 @@ from entities import food, intent, ball as Ball
 from utils.utils import *
 Intent = intent.Intent
 import pygame
-
+from game.ai_context import AIContext
 from utils.smooth_normal import smooth_add_pos
 
 
@@ -47,10 +47,10 @@ def _apply_intent_budget(layer_specs):
             layer.pos[0] = layer.pos[0] / length * L * share
             layer.pos[1] = layer.pos[1] / length * L * share
 
-def ai(ball: Ball.Ball, neighbours: list, game):
+def ai(ball: Ball.Ball, neighbours: list, ctx: AIContext):
     player_control = (
-        game.control_mode == config.CONTROL_MODE_PLAYER
-        and ball.team == config.PLAYER_TEAM
+        ctx.control_mode == config.CONTROL_MODE_PLAYER
+        and ball.team == ctx.player_team
     )
 
     if player_control:
@@ -79,21 +79,30 @@ def ai(ball: Ball.Ball, neighbours: list, game):
     own_blob = None
     enemy_blob = None
     if not player_control and ball.team in (config.TEAM_BLUE, config.TEAM_RED):
-        own_blob = game.blue_blob if ball.team == config.TEAM_BLUE else game.red_blob
-        enemy_blob = game.red_blob if ball.team == config.TEAM_BLUE else game.blue_blob
+        own_blob = ctx.blue_blob if ball.team == config.TEAM_BLUE else ctx.red_blob
+        enemy_blob = ctx.red_blob if ball.team == config.TEAM_BLUE else ctx.blue_blob
         mass_ratio = team_mass_ratio(own_blob, enemy_blob)
         tactic = team_tactic(mass_ratio)
 
-    ally_repulse = (
-        config.ALLY_REPULSE_K * (mass_ratio - 1)
-        if tactic == "defense"
-        else 0
-    )
     defense_anchor = (
-        team_largest_ball(game.balls, ball.team)
+        team_largest_ball(ctx.balls, ball.team)
         if tactic == "defense"
         else None
     )
+
+    if (
+        not player_control
+        and tactic == "defense"
+        and defense_anchor is not None
+        and ball is not defense_anchor
+    ):
+        dist, normal = calc_normal(ball.pos, defense_anchor.pos)
+        if dist < 1:
+            return ball.pos
+        return (
+            ball.pos[0] + normal[0] * config.INTENT_LOOK_AHEAD,
+            ball.pos[1] + normal[1] * config.INTENT_LOOK_AHEAD,
+        )
 
     #reflex_intent (begin)
     total_ball_intent = Intent([0, 0], config.COLOR_BLACK, "balls")
@@ -105,6 +114,7 @@ def ai(ball: Ball.Ball, neighbours: list, game):
         future_dist = 0
         if dist==0:
             continue
+
         #ball_intent (begin)
         ball_factor=1
         future_ball_intent = Intent((0,0),config.COLOR_PURPLE)
@@ -124,15 +134,6 @@ def ai(ball: Ball.Ball, neighbours: list, game):
             iy = ball_intent.pos[1] + 0.3 * future_ball_intent.pos[1]
             score = abs(ball_factor_without_dist) * calc_importance_factor(dist, view_scale)
             ball_vectors.append((score, ix, iy))
-            if neighbour.team == ball.team and ally_repulse > 0:
-                if defense_anchor is not None and (
-                    ball is defense_anchor or neighbour is defense_anchor
-                ):
-                    pass
-                else:
-                    repulse = ally_repulse * calc_importance_factor(dist, view_scale)
-                    total_ball_intent.pos[0] -= normal[0] * repulse
-                    total_ball_intent.pos[1] -= normal[1] * repulse
         
         #ball_intent (end)
 
@@ -156,13 +157,11 @@ def ai(ball: Ball.Ball, neighbours: list, game):
 
 
     #wall_intent (begin)
-
     wall_intent = Intent([0, 0], config.COLOR_WHITE, "wall")
     wall_dist_left = ball.pos[0]-ball.radius
     wall_dist_right = config.WINDOW_WIDTH-ball.pos[0]+ball.radius
     wall_dist_top = ball.pos[1] - ball.radius
     wall_dist_down = config.WINDOW_HEIGHT-ball.pos[1] + ball.radius
-
 
     if wall_dist_left<wall_scale_x:
         wall_intent.pos[0]+=calc_wall_importance(wall_dist_left, wall_scale_x)
@@ -173,6 +172,7 @@ def ai(ball: Ball.Ball, neighbours: list, game):
     if wall_dist_down<wall_scale_y:
         wall_intent.pos[1]-=calc_wall_importance(wall_dist_down, wall_scale_y)
     #wall_intent (end)
+
     #wander_intent (begin)
     ball.wander_angle += random.uniform(-0.3,0.3)
     wander_intent = Intent([0, 0], config.COLOR_WHITE, "wander")
@@ -182,8 +182,6 @@ def ai(ball: Ball.Ball, neighbours: list, game):
 
 
     #command_intent (begin)
-
-
     command_intent = Intent([0, 0], config.COLOR_ORANGE, "command")
 
     if player_control:
@@ -193,20 +191,7 @@ def ai(ball: Ball.Ball, neighbours: list, game):
         command_intent.pos[1] += command_normal[1] * command_factor * calc_importance_factor(command_dist, command_scale,reverse=True)
     elif ball.team in (config.TEAM_BLUE, config.TEAM_RED) and own_blob is not None and enemy_blob is not None:
         rally_scale = max(view_scale, own_blob.radius * 2)
-        if tactic == "defense":
-            if defense_anchor is not None and ball is not defense_anchor:
-                target = orbit_target(
-                    ball.pos,
-                    defense_anchor.pos,
-                    defense_anchor.radius,
-                    orbit_factor=config.DEFENSE_ANCHOR_ORBIT_FACTOR,
-                )
-                strength = (mass_ratio - 1) * config.ORBIT_COMMAND_K
-                command_dist, command_normal = calc_normal(ball.pos, target)
-                strength *= calc_importance_factor(command_dist, rally_scale)
-                command_intent.pos[0] += command_normal[0] * strength
-                command_intent.pos[1] += command_normal[1] * strength
-        elif tactic == "attack":
+        if tactic == "attack":
             strength = (1 - mass_ratio) * config.INFILTRATE_COMMAND_K
             command_dist, command_normal = calc_normal(ball.pos, enemy_blob.pos)
             strength *= calc_importance_factor(command_dist, rally_scale)
