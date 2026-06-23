@@ -1,9 +1,8 @@
-from re import S
 import config
 import math
-import entities
-from utils import smooth_normal
 import random
+from entities.intent import Intent
+from utils import smooth_normal
 class Ball:
     def __init__(self,pos: tuple,color,mass=None,team=None):
         self.pos = pos
@@ -20,7 +19,7 @@ class Ball:
         self.smooth_view = self.view_point
         self.intents=[]
         self.smooth_intents=self.intents
-        self.total_intent = entities.intent.Intent((0,0),None)
+        self.total_intent = Intent((0,0),None)
         self.smooth_total_intent = self.total_intent
         self.wander_angle = random.uniform(0,2*math.pi)
         self.ai_split_cooldown = 0
