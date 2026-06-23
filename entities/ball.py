@@ -36,16 +36,16 @@ class Ball:
 
     @property
     def speed(self):
-        return config.BALL_SPEED_FACTOR * math.sqrt(self.radius) / self.radius
-    
+        return 5*math.sqrt(self.radius)/self.radius
+
+    def update_smooth_view(self):
+        self.smooth_view = smooth_normal.smooth_add_pos(self.smooth_view, self.view_point)
 
     @property
     def normal(self):
-        self.smooth_view = smooth_normal.smooth_add_pos(self.smooth_view,self.view_point)
         dx = self.smooth_view[0]-self.pos[0]
         dy = self.smooth_view[1]-self.pos[1]
         dist = math.hypot(dx,dy)
         if dist<1:
             return (0,0)
         return (dx/dist,dy/dist)
-    
