@@ -1,12 +1,10 @@
-from re import escape
 import config
 import math
 from collections import defaultdict
-import pygame
 import random
 from entities import ball,food
 from ai import ai
-from utils.utils import calc_mass_center
+from utils.utils import calc_mass_center, calc_normal, team_mass_ratio, team_tactic, team_largest_ball
 Ball = ball.Ball
 Food = food.Food
 
@@ -24,7 +22,6 @@ class Game:
     def __init__(self, time, control_mode=None):
         self.time = time
         self.control_mode = control_mode or config.CONTROL_MODE
-        self.start_time=0
         self.start_mass=config.START_MASS
         self.is_over=False
         self.player_ball = None
@@ -36,6 +33,57 @@ class Game:
 
         self.red_blob = None
         self.blue_blob = None
+        self._food_density = {}
+        self.match_time_remaining = config.GAME_DURATION_SEC
+
+    def reset_for_match(self, opponent_count, food_count, map_size):
+        self.balls.clear()
+        self.balls_hash.clear()
+        self.foods.clear()
+        self.food_hash.clear()
+        self.player_ball = None
+        self.is_over = False
+        self.red_blob = None
+        self.blue_blob = None
+        self._food_density = {}
+        self.start_mass = food_count
+        self.match_time_remaining = config.GAME_DURATION_SEC
+
+        config.WINDOW_WIDTH = map_size
+        config.WINDOW_HEIGHT = map_size
+
+        margin = config.FOOD_DISTANCE_FACTOR
+        player_mass = max(config.MINIMUM_MASS * 2, config.START_TEAM_BALL_MASS)
+        player_x = map_size * (margin + 0.12)
+        player_y = map_size * 0.5
+        self._add_ball(
+            Ball((player_x, player_y), config.COLOR_BLUE, player_mass, config.TEAM_BLUE)
+        )
+
+        opp_mass = max(config.MINIMUM_MASS * 2, config.START_TEAM_BALL_MASS / opponent_count)
+        for _ in range(opponent_count):
+            ox = random.uniform(map_size * 0.55, map_size * (1 - margin))
+            oy = random.uniform(map_size * margin, map_size * (1 - margin))
+            r = math.sqrt(opp_mass)
+            ox = max(r, min(map_size - r, ox))
+            oy = max(r, min(map_size - r, oy))
+            self._add_ball(Ball((ox, oy), config.COLOR_RED, opp_mass, config.TEAM_RED))
+
+        for _ in range(food_count):
+            pos = (
+                random.uniform(map_size * margin, map_size * (1 - margin)),
+                random.uniform(map_size * margin, map_size * (1 - margin)),
+            )
+            self.create_food(pos)
+
+    def winner_team(self):
+        blue_mass = self.team_mass(config.TEAM_BLUE)
+        red_mass = self.team_mass(config.TEAM_RED)
+        if blue_mass > red_mass:
+            return config.TEAM_BLUE
+        if red_mass > blue_mass:
+            return config.TEAM_RED
+        return None
 
     def _make_team_blob(self, team):
         team_balls = [b for b in self.balls if b.team == team]
@@ -50,19 +98,6 @@ class Game:
     def update_team_blobs(self):
         self.red_blob = self._make_team_blob(config.TEAM_RED)
         self.blue_blob = self._make_team_blob(config.TEAM_BLUE)
-
-    def draw_team_blobs(self, screen, fill_alpha=40, outline_alpha=140):
-        for blob in (self.red_blob, self.blue_blob):
-            if blob is None:
-                continue
-            radius = int(blob.radius)
-            if radius < 1:
-                continue
-            color = config.COLOR_BLUE if blob.team == config.TEAM_BLUE else config.COLOR_RED
-            surf = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
-            pygame.draw.circle(surf, (*color, fill_alpha), (radius, radius), radius)
-            pygame.draw.circle(surf, (*color, outline_alpha), (radius, radius), radius, 2)
-            screen.blit(surf, (blob.pos[0] - radius, blob.pos[1] - radius))
 
     def team_mass(self, team):
         return sum(b.mass for b in self.balls if b.team == team)
@@ -120,7 +155,6 @@ class Game:
                 random.uniform(config.WINDOW_HEIGHT * margin, config.WINDOW_HEIGHT * (1 - margin)),
             )
             self.create_food(pos)
-        self.start_time = pygame.time.get_ticks()
 
     def _cell_pos(self, pos):
         return (int(pos[0] // config.CELL_SIZE), int(pos[1] // config.CELL_SIZE))
@@ -179,7 +213,7 @@ class Game:
         cell_pos = self._cell_pos(new_food.pos)
         self.food_hash[cell_pos].append(new_food)
 
-    def split_ball(self, ball):
+    def split_ball(self, ball, direction=None):
         if ball not in self.balls or ball.mass < 2 * config.MINIMUM_MASS:
             return
         old_radius = ball.radius
@@ -188,7 +222,10 @@ class Game:
         ball.mass = half_mass
         ball.old_mass = half_mass
         self._register_ball_in_hash(ball)
-        dx, dy = ball.normal
+        if direction is not None:
+            dx, dy = direction
+        else:
+            dx, dy = ball.normal
         if math.hypot(dx, dy) < 1e-9:
             dx = math.cos(ball.wander_angle)
             dy = math.sin(ball.wander_angle)
@@ -200,8 +237,77 @@ class Game:
         new_ball = Ball((new_x, new_y), ball.color, half_mass, ball.team)
         self._add_ball(new_ball)
 
+    def _food_density_cell(self, pos):
+        return (
+            int(pos[0] // config.AI_FOOD_DENSITY_CELL),
+            int(pos[1] // config.AI_FOOD_DENSITY_CELL),
+        )
+
+    def _rebuild_food_density(self):
+        density = defaultdict(int)
+        for foods in self.food_hash.values():
+            for food_item in foods:
+                density[self._food_density_cell(food_item.pos)] += 1
+        self._food_density = density
+
+    def _evaluate_food_density(self, ball, neighbours):
+        local_food = sum(1 for n in neighbours if isinstance(n, Food))
+        view_r = ball.radius * config.BALL_VIEW_FACTOR
+        cx, cy = ball.pos
+        search_r = config.AI_FOOD_DENSITY_SEARCH_RADIUS
+        bx_min = int((cx - search_r) // config.AI_FOOD_DENSITY_CELL)
+        bx_max = int((cx + search_r) // config.AI_FOOD_DENSITY_CELL)
+        by_min = int((cy - search_r) // config.AI_FOOD_DENSITY_CELL)
+        by_max = int((cy + search_r) // config.AI_FOOD_DENSITY_CELL)
+
+        best_count = 0
+        best_pos = None
+        for bx in range(bx_min, bx_max + 1):
+            for by in range(by_min, by_max + 1):
+                count = self._food_density.get((bx, by), 0)
+                if count == 0:
+                    continue
+                cell_cx = (bx + 0.5) * config.AI_FOOD_DENSITY_CELL
+                cell_cy = (by + 0.5) * config.AI_FOOD_DENSITY_CELL
+                dist = math.hypot(cell_cx - cx, cell_cy - cy)
+                if dist <= view_r or dist > search_r:
+                    continue
+                if count > best_count:
+                    best_count = count
+                    best_pos = (cell_cx, cell_cy)
+
+        direction = None
+        if best_pos is not None:
+            _, direction = calc_normal(ball.pos, best_pos)
+        return local_food, best_count, direction
+
+    def _food_split_allowed(self, local_food, remote_density, food_direction):
+        if food_direction is None:
+            return False
+        if remote_density < config.AI_SPLIT_FOOD_DENSITY_MIN:
+            return False
+        if local_food > 0 and remote_density < local_food * config.AI_SPLIT_FOOD_SPREAD_RATIO:
+            return False
+        return True
+
+    def _split_ball_to_max(self, ball, direction=None):
+        while ball in self.balls and ball.mass >= 2 * config.MINIMUM_MASS:
+            self.split_ball(ball, direction=direction)
+
+    def split_player_team(self, command_target):
+        if self.control_mode != config.CONTROL_MODE_PLAYER:
+            return
+        for ball in list(self.balls):
+            if ball.team != config.PLAYER_TEAM:
+                continue
+            if ball.mass < 2 * config.MINIMUM_MASS:
+                continue
+            dist, normal = calc_normal(ball.pos, command_target)
+            direction = normal if dist > 0 else None
+            self.split_ball(ball, direction=direction)
+
     def try_ai_split(self, ball, neighbours, dt):
-        if self.control_mode == config.CONTROL_MODE_PLAYER and ball is self.player_ball:
+        if self.control_mode == config.CONTROL_MODE_PLAYER and ball.team == config.PLAYER_TEAM:
             return
         if ball.team not in (config.TEAM_BLUE, config.TEAM_RED):
             return
@@ -210,19 +316,35 @@ class Game:
             return
         own_blob = self.blue_blob if ball.team == config.TEAM_BLUE else self.red_blob
         enemy_blob = self.red_blob if ball.team == config.TEAM_BLUE else self.blue_blob
-        if own_blob is None or enemy_blob is None or enemy_blob.mass<=1.5*own_blob.mass:
+        if own_blob is None or enemy_blob is None:
             return
-        food_count = sum(1 for n in neighbours if isinstance(n, Food))
-        if food_count < config.AI_SPLIT_MIN_FOOD:
-            return
-        splits = min(
-            config.AI_SPLIT_MAX_PER_UPDATE,
-            food_count // config.AI_SPLIT_FOOD_PER,
-        )
-        for _ in range(splits):
-            if ball not in self.balls:
-                break
-            self.split_ball(ball)
+
+        mass_ratio = team_mass_ratio(own_blob, enemy_blob)
+        tactic = team_tactic(mass_ratio)
+        local_food, remote_density, food_direction = self._evaluate_food_density(ball, neighbours)
+
+        if tactic == "neutral":
+            if not self._food_split_allowed(local_food, remote_density, food_direction):
+                return
+            for _ in range(config.AI_SPLIT_MAX_PER_UPDATE):
+                if ball not in self.balls or ball.mass < 2 * config.MINIMUM_MASS:
+                    break
+                self.split_ball(ball, direction=food_direction)
+        elif tactic == "defense":
+            anchor = team_largest_ball(self.balls, ball.team)
+            if ball is not anchor:
+                return
+            for _ in range(config.DEFENSE_SPLIT_MAX):
+                if ball not in self.balls or ball.mass < 2 * config.MINIMUM_MASS:
+                    break
+                self.split_ball(ball)
+        elif tactic == "attack":
+            if food_direction is not None:
+                split_direction = food_direction
+            else:
+                _, split_direction = calc_normal(ball.pos, enemy_blob.pos)
+            self._split_ball_to_max(ball, direction=split_direction)
+
         ball.ai_split_cooldown = config.AI_SPLIT_COOLDOWN
 
     def update_interseptions(self,ball,neighbours):
@@ -363,7 +485,12 @@ class Game:
         return list(neighbours)
 
     def update(self,dt):
+        if not self.is_over:
+            self.match_time_remaining = max(0, self.match_time_remaining - dt)
+            if self.match_time_remaining <= 0:
+                self.is_over = True
         self.update_team_blobs()
+        self._rebuild_food_density()
         for ball in list(self.balls):
             current_ball_grid_cells = self.update_hash(ball,ball.old_pos,ball.old_radius)
             neighbours = self.get_neighbours(current_ball_grid_cells)
